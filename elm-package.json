@@ -1,0 +1,15 @@
+{
+    "version": "1.0.0",
+    "summary": "Simple viewer of EAP's server.log files",
+    "repository": "https://github.com/jhrcek/sloview.git",
+    "license": "BSD3",
+    "source-directories": [
+        "."
+    ],
+    "exposed-modules": [],
+    "dependencies": {
+        "elm-lang/core": "4.0.4 <= v < 5.0.0",
+        "elm-lang/html": "1.1.0 <= v < 2.0.0"
+    },
+    "elm-version": "0.17.1 <= v < 0.18.0"
+}
