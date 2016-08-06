@@ -4,4 +4,7 @@ index.html
 # haskell stack work dir and build output
 .stack-work
 run-sloview
+# snap server stuff
+static/*
+log/*
 
