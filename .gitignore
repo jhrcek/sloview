@@ -1,10 +1,11 @@
 # elm work dir and build output
 elm-stuff
-index.html
+static/js/app.js
 # haskell stack work dir and build output
 .stack-work
 run-sloview
 # snap server stuff
-static/*
-log/*
+static/server.log
+log/access.log
+log/error.log
 

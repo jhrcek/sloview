@@ -84,15 +84,15 @@ view ({ serverLog, error, enabledLogLevels } as model) =
         , serverLog
             |> List.filter (\(SLMessage _ logLevel _ _ _) -> List.member logLevel enabledLogLevels)
             |> List.map viewMessage
-            |> div [ style [ ( "white-space", "pre-wrap" ) ] ]
+            |> div []
         ]
 
 
 viewMessage : SLMessage -> Html Msg
 viewMessage (SLMessage time logLevel logger thread payload) =
-    div (logLevelStyle logLevel)
+    div [ logLevelClass logLevel ]
         [ text <| String.join " " [ formatTime time {- , toString logLevel -}, payload ]
-        , hr [ style [ ( "margin", "0" ), ( "background", "#777777" ), ( "border", "0" ), ( "height", "1px" ) ] ] []
+        , hr [] []
         ]
 
 
@@ -122,7 +122,7 @@ filterControls : Model -> Html Msg
 filterControls { serverLog, enabledLogLevels, logLevelCounts } =
     let
         checkbox levelCount logLevel =
-            div (logLevelStyle logLevel)
+            div [ logLevelClass logLevel ]
                 [ input [ type' "checkbox", checked (List.member logLevel enabledLogLevels), onCheck (LogLevelChange logLevel) ] []
                 , text <| toString logLevel ++ " (" ++ toString levelCount ++ ")"
                 ]
@@ -130,17 +130,7 @@ filterControls { serverLog, enabledLogLevels, logLevelCounts } =
         ( f, e, w, i, d, t ) =
             logLevelCounts
     in
-        div
-            [ style
-                [ ( "display", "block" )
-                , ( "position", "fixed" )
-                , ( "right", "0" )
-                , ( "top", "0" )
-                , ( "padding", "0" )
-                , ( "max-width", "75%" )
-                , ( "background-color", "white" )
-                ]
-            ]
+        div [ class "controls" ]
             [ h4 [ style [ ( "margin", "0" ) ] ] [ text "Log Level (# of msgs)" ]
             , checkbox f FATAL
             , checkbox e ERROR
@@ -177,28 +167,6 @@ countLevels slog =
         List.foldl (\(SLMessage _ lvl _ _ _) counts -> addLevel lvl counts) ( 0, 0, 0, 0, 0, 0 ) slog
 
 
-logLevelStyle : LogLevel -> List (Attribute Msg)
-logLevelStyle ll =
-    let
-        bgColor c =
-            [ style [ ( "background-color", c ) ] ]
-    in
-        case ll of
-            FATAL ->
-                bgColor "#FF2626"
-
-            ERROR ->
-                bgColor "#FFA04A"
-
-            WARN ->
-                bgColor "#FFF284"
-
-            -- leave INFO white, because it's the most common
-            INFO ->
-                []
-
-            DEBUG ->
-                bgColor "#CAFFD8"
-
-            TRACE ->
-                bgColor "#C0F7FE"
+logLevelClass : LogLevel -> Attribute Msg
+logLevelClass =
+    class << String.toLower << toString

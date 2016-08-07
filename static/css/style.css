@@ -1,0 +1,42 @@
+html, head, body, h4 {
+    padding: 0;
+    margin: 0;
+}
+body {
+    font-family: calibri, helvetica, arial, sans-serif;
+}
+.fatal, .error, .warn, .info, .debug, .trace {
+    white-space: pre-wrap;
+}
+.fatal {
+    background-color: #FF2626;
+}
+.error {
+    background-color: #FFA04A;
+}
+.warn {
+    background-color: #FFF284;
+}
+.info {
+    background-color: white;
+}
+.debug {
+    background-color: #CAFFD8;
+}
+.trace {
+    background-color: #C0F7FE;
+}
+.controls {
+    display: block;
+    position: fixed;
+    right: 0;
+    top: 0;
+    padding: 0;
+    background-color: white;
+}
+hr {
+    margin: 0;
+    background: #777777;
+    border: 0;
+    height: 1px;
+}
