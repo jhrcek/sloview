@@ -24,7 +24,7 @@ main =
 type alias Model =
     { serverLog : ServerLog
     , logLevelCounts : ( Int, Int, Int, Int, Int, Int )
-    , error : Maybe String
+    , notifications : List String
     , enabledLogLevels : List LogLevel
     }
 
@@ -39,7 +39,7 @@ init : ( Model, Cmd Msg )
 init =
     ( { serverLog = []
       , logLevelCounts = ( 0, 0, 0, 0, 0, 0 )
-      , error = Just "Initializing ..."
+      , notifications = [ "Initializing ..." ]
       , enabledLogLevels = [ FATAL, ERROR, WARN ]
       }
     , loadServerLog
@@ -55,15 +55,19 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         LoadSuccess slogText ->
-            case SLModel.parseServerLog slogText of
-                Ok slog ->
-                    { model | serverLog = slog, logLevelCounts = countLevels slog, error = Nothing } ! []
-
-                Err err ->
-                    { model | serverLog = [], error = Just err } ! []
+            let
+                ( unparsedMessages, parsedMessagesList ) =
+                    SLModel.parseServerLog slogText
+            in
+                { model
+                    | serverLog = parsedMessagesList
+                    , logLevelCounts = countLevels parsedMessagesList
+                    , notifications = unparsedMessages
+                }
+                    ! []
 
         LoadFailed err ->
-            { model | serverLog = [], error = Just (toString err) } ! []
+            { model | serverLog = [], notifications = [ toString err ] } ! []
 
         LogLevelChange level isEnabled ->
             { model
@@ -77,15 +81,21 @@ update msg model =
 
 
 view : Model -> Html Msg
-view ({ serverLog, error, enabledLogLevels } as model) =
+view ({ serverLog, notifications, enabledLogLevels } as model) =
     div []
         [ filterControls model
-        , div [ style [ ( "color", "red" ) ] ] [ text <| Maybe.withDefault "" error ]
+        , notificationsView notifications
         , serverLog
             |> List.filter (\(SLMessage _ logLevel _ _ _) -> List.member logLevel enabledLogLevels)
             |> List.map viewMessage
             |> div []
         ]
+
+
+notificationsView : List String -> Html Msg
+notificationsView errMsgs =
+    div [ style [ ( "color", "red" ) ] ]
+        <| List.map (\m -> div [] [ text m ]) errMsgs
 
 
 viewMessage : SLMessage -> Html Msg

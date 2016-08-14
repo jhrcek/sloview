@@ -3,7 +3,7 @@ module SLModel exposing (..)
 import Time exposing (Time)
 import Char exposing (isDigit)
 import Combine exposing (..)
-import Combine.Char exposing (char, space, satisfy, eol, noneOf)
+import Combine.Char exposing (char, space, satisfy, eol, noneOf, anyChar)
 import Combine.Infix exposing (..)
 import Combine.Num exposing (..)
 import String
@@ -28,23 +28,13 @@ type LogLevel
     | FATAL
 
 
-parseServerLog : String -> Result String ServerLog
+parseServerLog : String -> ( List String, ServerLog )
 parseServerLog serverLogText =
-    -- TODO ugly - appending line to force last message to be parseds
-    case parse serverLogP serverLogText of
-        ( Ok sl, _ ) ->
-            Ok sl
-
-        ( Err errors, { input } ) ->
-            Err
-                <| "Parsing server.log failed:\n"
-                ++ String.join "\n" errors
-                ++ String.left 1000 input
-
-
-serverLogP : Parser ServerLog
-serverLogP =
-    slMessageP `manyTill` end
+    let
+        messageList =
+            splitMessages serverLogText
+    in
+        partitionMessageParseResults <| List.map (\m -> fst <| parse slMessageP m) messageList
 
 
 slMessageP : Parser SLMessage
@@ -118,17 +108,44 @@ threadP =
 
 payloadP : Parser String
 payloadP =
-    let
-        otherLineP =
-            (eol *> succeed "")
-                `or` ((\fstChr restLine -> String.cons fstChr restLine)
-                        <$> satisfy (not << Char.isDigit)
-                        <*> restOfLineP
-                     )
+    -- anything till the end of the SLMessage
+    regex ".*"
 
-        restOfLineP =
-            while ((/=) '\n') <* eol
+
+splitMessages : String -> List String
+splitMessages s =
+    let
+        accumulateMessages line msgList =
+            case msgList of
+                [] ->
+                    [ line ]
+
+                x :: xs ->
+                    if startsWithDigit line then
+                        "" :: (line ++ "\n" ++ x) :: xs
+                    else
+                        (line ++ "\n" ++ x) :: xs
+
+        startsWithDigit =
+            Maybe.withDefault False << Maybe.map (\( c, _ ) -> Char.isDigit c) << String.uncons
     in
-        (\fstLine otherLines -> String.join "\n" <| fstLine :: otherLines)
-            <$> restOfLineP
-            <*> many otherLineP
+        Maybe.withDefault [] << List.tail << List.foldr accumulateMessages [] <| String.lines s
+
+
+partitionMessageParseResults : List (Result (List String) SLMessage) -> ( List String, List SLMessage )
+partitionMessageParseResults rs =
+    case rs of
+        [] ->
+            ( [], [] )
+
+        r :: rs ->
+            let
+                ( es, ms ) =
+                    partitionMessageParseResults rs
+            in
+                case r of
+                    Err errs ->
+                        ( (String.join "\n" errs) :: es, ms )
+
+                    Ok m ->
+                        ( es, m :: ms )
