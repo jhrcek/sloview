@@ -6,6 +6,7 @@ import Combine exposing (..)
 import Combine.Char exposing (char, space, satisfy, eol, noneOf, anyChar)
 import Combine.Infix exposing (..)
 import Combine.Num exposing (..)
+import Date exposing (Date)
 import String
 
 
@@ -16,7 +17,7 @@ type alias ServerLog =
 type
     SLMessage
     --          Time LogLevel Logger Thread Payload
-    = SLMessage Time LogLevel String String String
+    = SLMessage (Maybe Date) Time LogLevel String String String
 
 
 type LogLevel
@@ -40,11 +41,19 @@ parseServerLog serverLogText =
 slMessageP : Parser SLMessage
 slMessageP =
     SLMessage
-        <$> (timeP <* space)
+        <$> (maybeDateP <* many space)
+        <*> (timeP <* space)
         <*> (logLevelP <* many1 space)
         <*> (loggerP <* space)
         <*> (threadP <* space)
         <*> payloadP
+
+
+maybeDateP : Parser (Maybe Date)
+maybeDateP =
+    regex "\\d{4}-\\d{2}-\\d{2}"
+        |> Combine.maybe
+        |> Combine.map (\maybeDateStr -> maybeDateStr `Maybe.andThen` (Date.fromString >> Result.toMaybe))
 
 
 
@@ -109,7 +118,7 @@ threadP =
 payloadP : Parser String
 payloadP =
     -- anything till the end of the SLMessage
-    regex ".*"
+    Combine.map String.fromList <| anyChar `manyTill` end
 
 
 splitMessages : String -> List String

@@ -86,7 +86,7 @@ view ({ serverLog, notifications, enabledLogLevels } as model) =
         [ filterControls model
         , notificationsView notifications
         , serverLog
-            |> List.filter (\(SLMessage _ logLevel _ _ _) -> List.member logLevel enabledLogLevels)
+            |> List.filter (\(SLMessage _ _ logLevel _ _ _) -> List.member logLevel enabledLogLevels)
             |> List.map viewMessage
             |> div []
         ]
@@ -99,7 +99,7 @@ notificationsView errMsgs =
 
 
 viewMessage : SLMessage -> Html Msg
-viewMessage (SLMessage time logLevel logger thread payload) =
+viewMessage (SLMessage date time logLevel logger thread payload) =
     div [ logLevelClass logLevel ]
         [ text <| String.join " " [ formatTime time {- , toString logLevel -}, payload ]
         , hr [] []
@@ -174,7 +174,7 @@ countLevels slog =
                 TRACE ->
                     ( f, e, w, i, d, t + 1 )
     in
-        List.foldl (\(SLMessage _ lvl _ _ _) counts -> addLevel lvl counts) ( 0, 0, 0, 0, 0, 0 ) slog
+        List.foldl (\(SLMessage _ _ lvl _ _ _) counts -> addLevel lvl counts) ( 0, 0, 0, 0, 0, 0 ) slog
 
 
 logLevelClass : LogLevel -> Attribute Msg
