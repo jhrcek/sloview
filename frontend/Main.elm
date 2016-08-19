@@ -26,6 +26,7 @@ type alias Model =
     , logLevelCounts : ( Int, Int, Int, Int, Int, Int )
     , notifications : List String
     , enabledLogLevels : List LogLevel
+    , enabledMessageFields : List SLMessageField
     }
 
 
@@ -33,6 +34,7 @@ type Msg
     = LoadSuccess String
     | LoadFailed Http.Error
     | LogLevelChange LogLevel Bool
+    | MessageFieldChange SLMessageField Bool
 
 
 init : ( Model, Cmd Msg )
@@ -41,6 +43,7 @@ init =
       , logLevelCounts = ( 0, 0, 0, 0, 0, 0 )
       , notifications = [ "Initializing ..." ]
       , enabledLogLevels = [ FATAL, ERROR, WARN ]
+      , enabledMessageFields = [ TimeField, PayloadField ]
       }
     , loadServerLog
     )
@@ -79,15 +82,25 @@ update msg model =
             }
                 ! []
 
+        MessageFieldChange field isEnabled ->
+            { model
+                | enabledMessageFields =
+                    if isEnabled then
+                        field :: model.enabledMessageFields
+                    else
+                        List.filter ((/=) field) model.enabledMessageFields
+            }
+                ! []
+
 
 view : Model -> Html Msg
-view ({ serverLog, notifications, enabledLogLevels } as model) =
+view ({ serverLog, notifications, enabledLogLevels, enabledMessageFields } as model) =
     div []
         [ filterControls model
         , notificationsView notifications
         , serverLog
             |> List.filter (\(SLMessage _ _ logLevel _ _ _) -> List.member logLevel enabledLogLevels)
-            |> List.map viewMessage
+            |> List.map (viewMessage enabledMessageFields)
             |> div []
         ]
 
@@ -98,12 +111,26 @@ notificationsView errMsgs =
         <| List.map (\m -> div [] [ text m ]) errMsgs
 
 
-viewMessage : SLMessage -> Html Msg
-viewMessage (SLMessage date time logLevel logger thread payload) =
-    div [ logLevelClass logLevel ]
-        [ text <| String.join " " [ formatTime time {- , toString logLevel -}, payload ]
-        , hr [] []
-        ]
+viewMessage : List SLMessageField -> SLMessage -> Html Msg
+viewMessage enabledFields (SLMessage date time logLevel logger thread payload) =
+    let
+        includeField field value =
+            if List.member field enabledFields then
+                value
+            else
+                ""
+    in
+        div [ logLevelClass logLevel ]
+            [ text
+                <| String.join " "
+                    [ includeField TimeField (formatTime time)
+                    , includeField LogLevelField (toString logLevel)
+                    , includeField LoggerField ("[" ++ logger ++ "]")
+                    , includeField ThreadField ("(" ++ thread ++ ")")
+                    , includeField PayloadField payload
+                    ]
+            , hr [] []
+            ]
 
 
 formatTime : Time -> String
@@ -129,9 +156,16 @@ formatTime totalMillis =
 
 
 filterControls : Model -> Html Msg
-filterControls { serverLog, enabledLogLevels, logLevelCounts } =
+filterControls { serverLog, logLevelCounts, enabledLogLevels, enabledMessageFields } =
+    div [ class "controls" ]
+        <| logLevelCheckboxes enabledLogLevels logLevelCounts
+        ++ messageFieldChecboxes enabledMessageFields
+
+
+logLevelCheckboxes : List LogLevel -> ( Int, Int, Int, Int, Int, Int ) -> List (Html Msg)
+logLevelCheckboxes enabledLogLevels logLevelCounts =
     let
-        checkbox levelCount logLevel =
+        logLevelCheckbox levelCount logLevel =
             div [ logLevelClass logLevel ]
                 [ input [ type' "checkbox", checked (List.member logLevel enabledLogLevels), onCheck (LogLevelChange logLevel) ] []
                 , text <| toString logLevel ++ " (" ++ toString levelCount ++ ")"
@@ -140,15 +174,32 @@ filterControls { serverLog, enabledLogLevels, logLevelCounts } =
         ( f, e, w, i, d, t ) =
             logLevelCounts
     in
-        div [ class "controls" ]
-            [ h4 [ style [ ( "margin", "0" ) ] ] [ text "Log Level (# of msgs)" ]
-            , checkbox f FATAL
-            , checkbox e ERROR
-            , checkbox w WARN
-            , checkbox i INFO
-            , checkbox d DEBUG
-            , checkbox t TRACE
-            ]
+        [ h4 [] [ text "Log Level (# of msgs)" ]
+        , logLevelCheckbox f FATAL
+        , logLevelCheckbox e ERROR
+        , logLevelCheckbox w WARN
+        , logLevelCheckbox i INFO
+        , logLevelCheckbox d DEBUG
+        , logLevelCheckbox t TRACE
+        ]
+
+
+messageFieldChecboxes : List SLMessageField -> List (Html Msg)
+messageFieldChecboxes enabledMessageFields =
+    let
+        messageFieldCheckbox field =
+            div []
+                [ input [ type' "checkbox", checked (List.member field enabledMessageFields), onCheck (MessageFieldChange field) ] []
+                , text <| String.dropRight 5 <| toString field
+                ]
+    in
+        [ h4 [] [ text "Message fields" ]
+        , messageFieldCheckbox TimeField
+        , messageFieldCheckbox LogLevelField
+        , messageFieldCheckbox LoggerField
+        , messageFieldCheckbox ThreadField
+        , messageFieldCheckbox PayloadField
+        ]
 
 
 countLevels : ServerLog -> ( Int, Int, Int, Int, Int, Int )

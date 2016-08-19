@@ -16,8 +16,17 @@ type alias ServerLog =
 
 type
     SLMessage
-    --          Time LogLevel Logger Thread Payload
+    --          Date         Time LogLevel Logger Thread Payload
     = SLMessage (Maybe Date) Time LogLevel String String String
+
+
+type SLMessageField
+    = DateField
+    | TimeField
+    | LogLevelField
+    | LoggerField
+    | ThreadField
+    | PayloadField
 
 
 type LogLevel

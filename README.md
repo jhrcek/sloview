@@ -6,8 +6,9 @@ frontend is written in [Elm](http://elm-lang.org/).
 ## Features & TODOs
 - [x] Parse server.log placed in static directory
 - [x] filtering of server.log messages based on log level
-- [ ] Uploading server.log files for analysis
+- [x] configure which message fields are displayed 
 - [x] per log level aggregation of message counts
+- [ ] Uploading server.log files for analysis
 - [ ] detection & aggregation of stacktraces in messages
 
 ## How to run it
