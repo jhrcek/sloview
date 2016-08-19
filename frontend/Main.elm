@@ -48,7 +48,7 @@ init =
 
 loadServerLog : Cmd Msg
 loadServerLog =
-    Task.perform LoadFailed LoadSuccess (Http.getString "http://0.0.0.0:8000/static/server.log")
+    Task.perform LoadFailed LoadSuccess (Http.getString "/static/server.log")
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
