@@ -1,11 +1,11 @@
 # elm work dir and build output
 elm-stuff
 static/js/app.js
-# haskell stack work dir and build output
+# haskell stuff
 .stack-work
+.cabal-sandbox
+cabal.sandbox.config
+dist
 run-sloview
-# snap server stuff
-static/server.log
-log/access.log
-log/error.log
-
+# static dir used for serving server.log files being analyzed
+static/
