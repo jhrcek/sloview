@@ -1,13 +1,11 @@
 module SLModel exposing (..)
 
 import Time exposing (Time)
-import Char exposing (isDigit)
+import Char
 import Combine exposing (..)
 import Combine.Char exposing (char, space, satisfy, eol, noneOf, anyChar)
-import Combine.Infix exposing (..)
-import Combine.Num exposing (..)
+import Combine.Num exposing (digit)
 import Date exposing (Date)
-import String
 
 
 type alias ServerLog =
@@ -38,16 +36,23 @@ type LogLevel
     | FATAL
 
 
+type alias Par a =
+    {- stateless parser -}
+    Parser () a
+
+
 parseServerLog : String -> ( List String, ServerLog )
 parseServerLog serverLogText =
     let
         messageList =
             splitMessages serverLogText
     in
-        partitionMessageParseResults <| List.map (\m -> fst <| parse slMessageP m) messageList
+        messageList
+            |> List.map (parse slMessageP)
+            |> partitionMessageParseResults
 
 
-slMessageP : Parser SLMessage
+slMessageP : Par SLMessage
 slMessageP =
     SLMessage
         <$> (maybeDateP <* many space)
@@ -58,18 +63,18 @@ slMessageP =
         <*> payloadP
 
 
-maybeDateP : Parser (Maybe Date)
+maybeDateP : Par (Maybe Date)
 maybeDateP =
     regex "\\d{4}-\\d{2}-\\d{2}"
         |> Combine.maybe
-        |> Combine.map (\maybeDateStr -> maybeDateStr `Maybe.andThen` (Date.fromString >> Result.toMaybe))
+        |> Combine.map (\maybeDateStr -> maybeDateStr |> Maybe.andThen (Date.fromString >> Result.toMaybe))
 
 
 
 {- Parse message timestamp like 07:39:02,146 -}
 
 
-timeP : Parser Time
+timeP : Par Time
 timeP =
     let
         twoDigits =
@@ -90,30 +95,30 @@ timeP =
             <*> threeDigits
 
 
-logLevelP : Parser LogLevel
+logLevelP : Par LogLevel
 logLevelP =
     let
         parseAs str ll =
             string str *> succeed ll
     in
         choice
-            [ "TRACE" `parseAs` TRACE
-            , "DEBUG" `parseAs` DEBUG
-            , "INFO" `parseAs` INFO
-            , "WARN" `parseAs` WARN
-            , "ERROR" `parseAs` ERROR
-            , "FATAL" `parseAs` FATAL
+            [ parseAs "TRACE" TRACE
+            , parseAs "DEBUG" DEBUG
+            , parseAs "INFO" INFO
+            , parseAs "WARN" WARN
+            , parseAs "ERROR" ERROR
+            , parseAs "FATAL" FATAL
             ]
             <?> "Unknown LogLevel"
 
 
-loggerP : Parser String
+loggerP : Par String
 loggerP =
     String.fromList
         <$> brackets (many1 (satisfy ((/=) ']')))
 
 
-threadP : Parser String
+threadP : Par String
 threadP =
     let
         strWithouParens =
@@ -121,13 +126,13 @@ threadP =
     in
         (String.fromList << List.concat)
             <$> -- workaround for thread names like "(Thread-5 (HornetQ-client-global-threads-242452152))"
-                parens (many1 (strWithouParens `or` (parens strWithouParens)))
+                parens (many1 (or strWithouParens (parens strWithouParens)))
 
 
-payloadP : Parser String
+payloadP : Par String
 payloadP =
     -- anything till the end of the SLMessage
-    Combine.map String.fromList <| anyChar `manyTill` end
+    Combine.map String.fromList <| manyTill anyChar end
 
 
 splitMessages : String -> List String
@@ -150,7 +155,7 @@ splitMessages s =
         Maybe.withDefault [] << List.tail << List.foldr accumulateMessages [] <| String.lines s
 
 
-partitionMessageParseResults : List (Result (List String) SLMessage) -> ( List String, List SLMessage )
+partitionMessageParseResults : List (Result (ParseErr ()) (ParseOk () SLMessage)) -> ( List String, List SLMessage )
 partitionMessageParseResults rs =
     case rs of
         [] ->
@@ -162,8 +167,8 @@ partitionMessageParseResults rs =
                     partitionMessageParseResults rs
             in
                 case r of
-                    Err errs ->
+                    Err ( _, _, errs ) ->
                         ( (String.join "\n" errs) :: es, ms )
 
-                    Ok m ->
+                    Ok ( _, _, m ) ->
                         ( es, m :: ms )

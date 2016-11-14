@@ -1,7 +1,6 @@
 module Main exposing (..)
 
 import Html exposing (..)
-import Html.App
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Http
@@ -11,9 +10,9 @@ import Time exposing (Time)
 import String
 
 
-main : Program Never
+main : Program Never Model Msg
 main =
-    Html.App.program
+    Html.program
         { init = init
         , update = update
         , subscriptions = \_ -> Sub.none
@@ -51,7 +50,17 @@ init =
 
 loadServerLog : Cmd Msg
 loadServerLog =
-    Task.perform LoadFailed LoadSuccess (Http.getString "/static/server.log")
+    let
+        procResult res =
+            case res of
+                Err e ->
+                    LoadFailed e
+
+                Ok r ->
+                    LoadSuccess r
+    in
+        Http.toTask (Http.getString "/static/server.log")
+            |> Task.attempt procResult
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -107,8 +116,8 @@ view ({ serverLog, notifications, enabledLogLevels, enabledMessageFields } as mo
 
 notificationsView : List String -> Html Msg
 notificationsView errMsgs =
-    div [ style [ ( "color", "red" ) ] ]
-        <| List.map (\m -> div [] [ text m ]) errMsgs
+    div [ style [ ( "color", "red" ) ] ] <|
+        List.map (\m -> div [] [ text m ]) errMsgs
 
 
 viewMessage : List SLMessageField -> SLMessage -> Html Msg
@@ -121,8 +130,8 @@ viewMessage enabledFields (SLMessage date time logLevel logger thread payload) =
                 ""
     in
         div [ logLevelClass logLevel ]
-            [ text
-                <| String.join " "
+            [ text <|
+                String.join " "
                     [ includeField TimeField (formatTime time)
                     , includeField LogLevelField (toString logLevel)
                     , includeField LoggerField ("[" ++ logger ++ "]")
@@ -157,9 +166,9 @@ formatTime totalMillis =
 
 filterControls : Model -> Html Msg
 filterControls { serverLog, logLevelCounts, enabledLogLevels, enabledMessageFields } =
-    div [ class "controls" ]
-        <| logLevelCheckboxes enabledLogLevels logLevelCounts
-        ++ messageFieldChecboxes enabledMessageFields
+    div [ class "controls" ] <|
+        logLevelCheckboxes enabledLogLevels logLevelCounts
+            ++ messageFieldChecboxes enabledMessageFields
 
 
 logLevelCheckboxes : List LogLevel -> ( Int, Int, Int, Int, Int, Int ) -> List (Html Msg)
@@ -167,7 +176,7 @@ logLevelCheckboxes enabledLogLevels logLevelCounts =
     let
         logLevelCheckbox levelCount logLevel =
             div [ logLevelClass logLevel ]
-                [ input [ type' "checkbox", checked (List.member logLevel enabledLogLevels), onCheck (LogLevelChange logLevel) ] []
+                [ input [ type_ "checkbox", checked (List.member logLevel enabledLogLevels), onCheck (LogLevelChange logLevel) ] []
                 , text <| toString logLevel ++ " (" ++ toString levelCount ++ ")"
                 ]
 
@@ -189,7 +198,7 @@ messageFieldChecboxes enabledMessageFields =
     let
         messageFieldCheckbox field =
             div []
-                [ input [ type' "checkbox", checked (List.member field enabledMessageFields), onCheck (MessageFieldChange field) ] []
+                [ input [ type_ "checkbox", checked (List.member field enabledMessageFields), onCheck (MessageFieldChange field) ] []
                 , text <| String.dropRight 5 <| toString field
                 ]
     in
