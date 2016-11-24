@@ -2,14 +2,13 @@
 module Main where
 
 import Control.Applicative ((<|>))
-import Snap.Core (dir, ifTop, Snap, writeLazyText)
-import Snap.Util.FileServe (serveDirectory)
+import Snap.Core (dir, ifTop, route, Snap)
 import Snap.Http.Server (simpleHttpServe)
-import Snap.Http.Server.Config (defaultConfig, Config, ConfigLog(ConfigNoLog), setAccessLog, setErrorLog)
-import qualified Text.Blaze.Html.Renderer.Text as Blaze
+import Snap.Http.Server.Config (defaultConfig, Config, ConfigLog(ConfigNoLog, ConfigIoLog), setAccessLog, setErrorLog)
+import Snap.Util.FileServe (serveDirectory)
 
-import Pages.Index as Index
-
+import Handler.Index as Index
+import Handler.Upload as Upload
 
 main :: IO ()
 main = simpleHttpServe config site
@@ -17,13 +16,11 @@ main = simpleHttpServe config site
 config :: Config Snap a
 config =
   setAccessLog ConfigNoLog $
-  setErrorLog ConfigNoLog $
+  setErrorLog (ConfigIoLog print)
   defaultConfig
 
 site :: Snap ()
 site =
-  ifTop indexHandler <|>
-  dir "static" (serveDirectory "static")
-
-indexHandler :: Snap ()
-indexHandler = writeLazyText . Blaze.renderHtml $ Index.generate "Elm.Main.fullscreen()"
+    ifTop Index.handler
+    <|> route [("/doUpload", Upload.handler)]
+    <|> dir "static" (serveDirectory "static")

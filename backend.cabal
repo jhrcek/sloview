@@ -15,13 +15,15 @@ Executable run-sloview
   main-is: Main.hs
 
   other-modules:
-    Pages.Index
+    Handler.Index,
+    Handler.Upload
 
   Build-depends:
     base,
     blaze-html,
     snap-core,
-    snap-server
+    snap-server,
+    text
 
   ghc-options:
     -threaded

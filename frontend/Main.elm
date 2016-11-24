@@ -105,12 +105,21 @@ update msg model =
 view : Model -> Html Msg
 view ({ serverLog, notifications, enabledLogLevels, enabledMessageFields } as model) =
     div []
-        [ filterControls model
+        [ controlsPanel model
         , notificationsView notifications
         , serverLog
             |> List.filter (\(SLMessage _ _ logLevel _ _ _) -> List.member logLevel enabledLogLevels)
             |> List.map (viewMessage enabledMessageFields)
             |> div []
+        ]
+
+
+uploadForm : Html Msg
+uploadForm =
+    Html.form [ enctype "multipart/form-data", action "doUpload", method "POST" ]
+        [ input [ name "file", type_ "file" ] []
+        , br [] []
+        , input [ type_ "submit", value "Upload server.log" ] []
         ]
 
 
@@ -164,10 +173,11 @@ formatTime totalMillis =
             ]
 
 
-filterControls : Model -> Html Msg
-filterControls { serverLog, logLevelCounts, enabledLogLevels, enabledMessageFields } =
+controlsPanel : Model -> Html Msg
+controlsPanel { serverLog, logLevelCounts, enabledLogLevels, enabledMessageFields } =
     div [ class "controls" ] <|
-        logLevelCheckboxes enabledLogLevels logLevelCounts
+        uploadForm
+            :: logLevelCheckboxes enabledLogLevels logLevelCounts
             ++ messageFieldChecboxes enabledMessageFields
 
 
