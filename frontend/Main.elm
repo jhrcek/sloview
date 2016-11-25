@@ -4,7 +4,7 @@ import Date.Format
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
-import Json.Decode
+import Json.Decode as Json
 import Model.ServerLog exposing (..)
 import Time exposing (Time)
 
@@ -25,12 +25,14 @@ type alias Model =
     , notifications : List String
     , enabledLogLevels : List LogLevel
     , enabledMessageFields : List ServerLogMessageField
+    , dateFormat : String
     }
 
 
 type Msg
     = LogLevelChange LogLevel Bool
     | MessageFieldChange ServerLogMessageField Bool
+    | DateFormatChange String
 
 
 init : String -> ( Model, Cmd Msg )
@@ -44,6 +46,7 @@ init serverLogJson =
           , notifications = errs
           , enabledLogLevels = [ FATAL, ERROR, WARN ]
           , enabledMessageFields = [ DateTimeField, PayloadField ]
+          , dateFormat = "%H:%M:%S"
           }
         , Cmd.none
         )
@@ -51,7 +54,7 @@ init serverLogJson =
 
 parseServerLogJson : String -> ( ServerLog, List String )
 parseServerLogJson serverLogJson =
-    case Json.Decode.decodeString serverLogDecoder serverLogJson of
+    case Json.decodeString serverLogDecoder serverLogJson of
         Ok slog ->
             ( slog, [] )
 
@@ -63,30 +66,29 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         LogLevelChange level isEnabled ->
-            ( { model
-                | enabledLogLevels =
-                    if isEnabled then
-                        level :: model.enabledLogLevels
-                    else
-                        List.filter ((/=) level) model.enabledLogLevels
-              }
+            ( { model | enabledLogLevels = updateList level isEnabled model.enabledLogLevels }
             , Cmd.none
             )
 
         MessageFieldChange field isEnabled ->
-            ( { model
-                | enabledMessageFields =
-                    if isEnabled then
-                        field :: model.enabledMessageFields
-                    else
-                        List.filter ((/=) field) model.enabledMessageFields
-              }
+            ( { model | enabledMessageFields = updateList field isEnabled model.enabledMessageFields }
             , Cmd.none
             )
 
+        DateFormatChange df ->
+            ( { model | dateFormat = df }, Cmd.none )
+
+
+updateList : a -> Bool -> List a -> List a
+updateList item addItem list =
+    if addItem then
+        item :: list
+    else
+        List.filter ((/=) item) list
+
 
 view : Model -> Html Msg
-view ({ serverLog, notifications, enabledLogLevels, enabledMessageFields } as model) =
+view ({ serverLog, notifications, enabledLogLevels, enabledMessageFields, dateFormat } as model) =
     let
         messagesView =
             if List.isEmpty enabledMessageFields then
@@ -94,7 +96,7 @@ view ({ serverLog, notifications, enabledLogLevels, enabledMessageFields } as mo
             else
                 serverLog
                     |> List.filter (\(M _ logLevel _ _ _ _) -> List.member logLevel enabledLogLevels)
-                    |> List.map (viewMessage enabledMessageFields)
+                    |> List.map (viewMessage dateFormat enabledMessageFields)
                     |> div []
     in
         div []
@@ -119,8 +121,8 @@ notificationsView errMsgs =
         List.map (\m -> div [] [ text m ]) errMsgs
 
 
-viewMessage : List ServerLogMessageField -> ServerLogMessage -> Html Msg
-viewMessage enabledFields (M date logLevel logger thread payload exception) =
+viewMessage : String -> List ServerLogMessageField -> ServerLogMessage -> Html Msg
+viewMessage dateFormat enabledFields (M date logLevel logger thread payload exception) =
     let
         includeField field value =
             if List.member field enabledFields then
@@ -131,7 +133,7 @@ viewMessage enabledFields (M date logLevel logger thread payload exception) =
         div [ logLevelClass logLevel ]
             [ text <|
                 String.join " "
-                    [ includeField DateTimeField (Date.Format.format "%Y-%m-%d %H:%M:%S" date)
+                    [ includeField DateTimeField (Date.Format.format dateFormat date)
                     , includeField LogLevelField (toString logLevel)
                     , includeField LoggerField ("[" ++ logger ++ "]")
                     , includeField ThreadField ("(" ++ thread ++ ")")
@@ -170,6 +172,7 @@ controlsPanel { serverLog, logLevelCounts, enabledLogLevels, enabledMessageField
         uploadForm
             :: logLevelCheckboxes enabledLogLevels logLevelCounts
             ++ messageFieldChecboxes enabledMessageFields
+            ++ [ dateFormatSelect ]
 
 
 logLevelCheckboxes : List LogLevel -> ( Int, Int, Int, Int, Int, Int, Int ) -> List (Html Msg)
@@ -212,6 +215,22 @@ messageFieldChecboxes enabledMessageFields =
         , messageFieldCheckbox PayloadField
         , messageFieldCheckbox ExceptionField
         ]
+
+
+dateFormatSelect : Html Msg
+dateFormatSelect =
+    let
+        availableOptions =
+            [ ( "%H:%M:%S", "HH:MM:SS" ), ( "%Y-%m-%d %H:%M:%S", "YYYY-mm-dd HH:MM:SS" ) ]
+
+        formatOption ( val, label ) =
+            option [ value val ] [ text label ]
+    in
+        div []
+            [ h4 [] [ text "Date format" ]
+            , select [ on "change" (Json.map DateFormatChange targetValue) ]
+                (List.map formatOption availableOptions)
+            ]
 
 
 countLevels : ServerLog -> ( Int, Int, Int, Int, Int, Int, Int )
