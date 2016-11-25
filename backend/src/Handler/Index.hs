@@ -1,17 +1,35 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Handler.Index (handler) where
 
+import Data.Aeson (encode)
+import Data.ByteString.Lazy (ByteString)
+import qualified Data.ByteString.Lazy.Char8 as BS
 import Snap.Core (Snap, writeLazyText)
 import Text.Blaze.Html5 ((!))
 import qualified Text.Blaze.Html5 as H
 import qualified Text.Blaze.Html5.Attributes as A
 import Text.Blaze.Html.Renderer.Text (renderHtml)
 
-handler :: Snap ()
-handler = writeLazyText . renderHtml $ generate "Elm.Main.fullscreen()"
+import Model.ServerLog
 
-generate :: String -> H.Html
-generate elmInitCode =
+handler :: Snap ()
+handler =
+  let markup = renderHtml $ generatePage [ testMessage -- TODO replace with parsed messages
+                                         , testMessage {logLevel = INFO, exception = Just "Something\n\tat some.MyClass (1)"}
+                                         ]
+  in  writeLazyText markup
+
+
+generateElmInitCode :: ServerLog -> ByteString
+generateElmInitCode sl = BS.concat $ map BS.pack
+    [ "Elm.Main.fullscreen("
+    , show $ encode sl --TODO using show as a hack to escape '"' in the json - how to do it better?
+                      -- i.e. how to convert lazy json in ByteString to be rendered on page?
+    , ")"
+    ]
+
+generatePage :: ServerLog -> H.Html
+generatePage sl =
   H.docTypeHtml $ do
     H.head $ do
       H.meta ! A.charset "UTF-8"
@@ -19,4 +37,4 @@ generate elmInitCode =
       H.link ! A.rel "stylesheet" ! A.href "static/css/style.css"
       H.script ! A.src "static/js/app.js" $ ""
     H.body $
-      H.script $ H.preEscapedToMarkup elmInitCode
+      H.script $ H.unsafeLazyByteString $ generateElmInitCode sl

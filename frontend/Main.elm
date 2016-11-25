@@ -1,18 +1,17 @@
 module Main exposing (..)
 
+import Date.Format
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
-import Http
-import Task
-import SLModel exposing (..)
+import Json.Decode
+import Model.ServerLog exposing (..)
 import Time exposing (Time)
-import String
 
 
-main : Program Never Model Msg
+main : Program String Model Msg
 main =
-    Html.program
+    Html.programWithFlags
         { init = init
         , update = update
         , subscriptions = \_ -> Sub.none
@@ -22,96 +21,87 @@ main =
 
 type alias Model =
     { serverLog : ServerLog
-    , logLevelCounts : ( Int, Int, Int, Int, Int, Int )
+    , logLevelCounts : ( Int, Int, Int, Int, Int, Int, Int )
     , notifications : List String
     , enabledLogLevels : List LogLevel
-    , enabledMessageFields : List SLMessageField
+    , enabledMessageFields : List ServerLogMessageField
     }
 
 
 type Msg
-    = LoadSuccess String
-    | LoadFailed Http.Error
-    | LogLevelChange LogLevel Bool
-    | MessageFieldChange SLMessageField Bool
+    = LogLevelChange LogLevel Bool
+    | MessageFieldChange ServerLogMessageField Bool
 
 
-init : ( Model, Cmd Msg )
-init =
-    ( { serverLog = []
-      , logLevelCounts = ( 0, 0, 0, 0, 0, 0 )
-      , notifications = [ "Initializing ..." ]
-      , enabledLogLevels = [ FATAL, ERROR, WARN ]
-      , enabledMessageFields = [ TimeField, PayloadField ]
-      }
-    , loadServerLog
-    )
-
-
-loadServerLog : Cmd Msg
-loadServerLog =
+init : String -> ( Model, Cmd Msg )
+init serverLogJson =
     let
-        procResult res =
-            case res of
-                Err e ->
-                    LoadFailed e
-
-                Ok r ->
-                    LoadSuccess r
+        ( sl, errs ) =
+            parseServerLogJson serverLogJson
     in
-        Http.toTask (Http.getString "/static/server.log")
-            |> Task.attempt procResult
+        ( { serverLog = sl
+          , logLevelCounts = countLevels sl
+          , notifications = errs
+          , enabledLogLevels = [ FATAL, ERROR, WARN ]
+          , enabledMessageFields = [ DateTimeField, PayloadField ]
+          }
+        , Cmd.none
+        )
+
+
+parseServerLogJson : String -> ( ServerLog, List String )
+parseServerLogJson serverLogJson =
+    case Json.Decode.decodeString serverLogDecoder serverLogJson of
+        Ok slog ->
+            ( slog, [] )
+
+        Err err ->
+            ( [], [ err ] )
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        LoadSuccess slogText ->
-            let
-                ( unparsedMessages, parsedMessagesList ) =
-                    SLModel.parseServerLog slogText
-            in
-                { model
-                    | serverLog = parsedMessagesList
-                    , logLevelCounts = countLevels parsedMessagesList
-                    , notifications = unparsedMessages
-                }
-                    ! []
-
-        LoadFailed err ->
-            { model | serverLog = [], notifications = [ toString err ] } ! []
-
         LogLevelChange level isEnabled ->
-            { model
+            ( { model
                 | enabledLogLevels =
                     if isEnabled then
                         level :: model.enabledLogLevels
                     else
                         List.filter ((/=) level) model.enabledLogLevels
-            }
-                ! []
+              }
+            , Cmd.none
+            )
 
         MessageFieldChange field isEnabled ->
-            { model
+            ( { model
                 | enabledMessageFields =
                     if isEnabled then
                         field :: model.enabledMessageFields
                     else
                         List.filter ((/=) field) model.enabledMessageFields
-            }
-                ! []
+              }
+            , Cmd.none
+            )
 
 
 view : Model -> Html Msg
 view ({ serverLog, notifications, enabledLogLevels, enabledMessageFields } as model) =
-    div []
-        [ controlsPanel model
-        , notificationsView notifications
-        , serverLog
-            |> List.filter (\(SLMessage _ _ logLevel _ _ _) -> List.member logLevel enabledLogLevels)
-            |> List.map (viewMessage enabledMessageFields)
-            |> div []
-        ]
+    let
+        messagesView =
+            if List.isEmpty enabledMessageFields then
+                div [] []
+            else
+                serverLog
+                    |> List.filter (\(M _ logLevel _ _ _ _) -> List.member logLevel enabledLogLevels)
+                    |> List.map (viewMessage enabledMessageFields)
+                    |> div []
+    in
+        div []
+            [ controlsPanel model
+            , notificationsView notifications
+            , messagesView
+            ]
 
 
 uploadForm : Html Msg
@@ -129,8 +119,8 @@ notificationsView errMsgs =
         List.map (\m -> div [] [ text m ]) errMsgs
 
 
-viewMessage : List SLMessageField -> SLMessage -> Html Msg
-viewMessage enabledFields (SLMessage date time logLevel logger thread payload) =
+viewMessage : List ServerLogMessageField -> ServerLogMessage -> Html Msg
+viewMessage enabledFields (M date logLevel logger thread payload exception) =
     let
         includeField field value =
             if List.member field enabledFields then
@@ -141,11 +131,12 @@ viewMessage enabledFields (SLMessage date time logLevel logger thread payload) =
         div [ logLevelClass logLevel ]
             [ text <|
                 String.join " "
-                    [ includeField TimeField (formatTime time)
+                    [ includeField DateTimeField (Date.Format.format "%Y-%m-%d %H:%M:%S" date)
                     , includeField LogLevelField (toString logLevel)
                     , includeField LoggerField ("[" ++ logger ++ "]")
                     , includeField ThreadField ("(" ++ thread ++ ")")
                     , includeField PayloadField payload
+                    , includeField ExceptionField (Maybe.withDefault "" exception)
                     ]
             , hr [] []
             ]
@@ -181,7 +172,7 @@ controlsPanel { serverLog, logLevelCounts, enabledLogLevels, enabledMessageField
             ++ messageFieldChecboxes enabledMessageFields
 
 
-logLevelCheckboxes : List LogLevel -> ( Int, Int, Int, Int, Int, Int ) -> List (Html Msg)
+logLevelCheckboxes : List LogLevel -> ( Int, Int, Int, Int, Int, Int, Int ) -> List (Html Msg)
 logLevelCheckboxes enabledLogLevels logLevelCounts =
     let
         logLevelCheckbox levelCount logLevel =
@@ -190,7 +181,7 @@ logLevelCheckboxes enabledLogLevels logLevelCounts =
                 , text <| toString logLevel ++ " (" ++ toString levelCount ++ ")"
                 ]
 
-        ( f, e, w, i, d, t ) =
+        ( f, e, w, i, d, t, u ) =
             logLevelCounts
     in
         [ h4 [] [ text "Log Level (# of msgs)" ]
@@ -200,10 +191,11 @@ logLevelCheckboxes enabledLogLevels logLevelCounts =
         , logLevelCheckbox i INFO
         , logLevelCheckbox d DEBUG
         , logLevelCheckbox t TRACE
+        , logLevelCheckbox u UNKNOWN
         ]
 
 
-messageFieldChecboxes : List SLMessageField -> List (Html Msg)
+messageFieldChecboxes : List ServerLogMessageField -> List (Html Msg)
 messageFieldChecboxes enabledMessageFields =
     let
         messageFieldCheckbox field =
@@ -213,38 +205,42 @@ messageFieldChecboxes enabledMessageFields =
                 ]
     in
         [ h4 [] [ text "Message fields" ]
-        , messageFieldCheckbox TimeField
+        , messageFieldCheckbox DateTimeField
         , messageFieldCheckbox LogLevelField
         , messageFieldCheckbox LoggerField
         , messageFieldCheckbox ThreadField
         , messageFieldCheckbox PayloadField
+        , messageFieldCheckbox ExceptionField
         ]
 
 
-countLevels : ServerLog -> ( Int, Int, Int, Int, Int, Int )
+countLevels : ServerLog -> ( Int, Int, Int, Int, Int, Int, Int )
 countLevels slog =
     let
-        addLevel lvl ( f, e, w, i, d, t ) =
+        addLevel lvl ( f, e, w, i, d, t, u ) =
             case lvl of
                 FATAL ->
-                    ( f + 1, e, w, i, d, t )
+                    ( f + 1, e, w, i, d, t, u )
 
                 ERROR ->
-                    ( f, e + 1, w, i, d, t )
+                    ( f, e + 1, w, i, d, t, u )
 
                 WARN ->
-                    ( f, e, w + 1, i, d, t )
+                    ( f, e, w + 1, i, d, t, u )
 
                 INFO ->
-                    ( f, e, w, i + 1, d, t )
+                    ( f, e, w, i + 1, d, t, u )
 
                 DEBUG ->
-                    ( f, e, w, i, d + 1, t )
+                    ( f, e, w, i, d + 1, t, u )
 
                 TRACE ->
-                    ( f, e, w, i, d, t + 1 )
+                    ( f, e, w, i, d, t + 1, u )
+
+                UNKNOWN ->
+                    ( f, e, w, i, d, t, u + 1 )
     in
-        List.foldl (\(SLMessage _ _ lvl _ _ _) counts -> addLevel lvl counts) ( 0, 0, 0, 0, 0, 0 ) slog
+        List.foldl (\(M _ lvl _ _ _ _) counts -> addLevel lvl counts) ( 0, 0, 0, 0, 0, 0, 0 ) slog
 
 
 logLevelClass : LogLevel -> Attribute Msg

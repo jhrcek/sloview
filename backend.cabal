@@ -16,14 +16,18 @@ Executable run-sloview
 
   other-modules:
     Handler.Index,
-    Handler.Upload
+    Handler.Upload,
+    Model.ServerLog
 
   Build-depends:
+    aeson,
     base,
     blaze-html,
+    bytestring,
     snap-core,
     snap-server,
-    text
+    text,
+    time
 
   ghc-options:
     -threaded
