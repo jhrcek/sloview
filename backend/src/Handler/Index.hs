@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Handler.Index (handler) where
+module Handler.Index (indexHandler) where
 
 import Data.Aeson (encode)
 import Data.ByteString.Lazy (ByteString)
@@ -12,21 +12,10 @@ import Text.Blaze.Html.Renderer.Text (renderHtml)
 
 import Model.ServerLog
 
-handler :: Snap ()
-handler =
-  let markup = renderHtml $ generatePage [ testMessage -- TODO replace with parsed messages
-                                         , testMessage {logLevel = INFO, exception = Just "Something\n\tat some.MyClass (1)"}
-                                         ]
+indexHandler :: ServerLog -> Snap ()
+indexHandler sl =
+  let markup = renderHtml $ generatePage sl
   in  writeLazyText markup
-
-
-generateElmInitCode :: ServerLog -> ByteString
-generateElmInitCode sl = BS.concat $ map BS.pack
-    [ "Elm.Main.fullscreen("
-    , show $ encode sl --TODO using show as a hack to escape '"' in the json - how to do it better?
-                      -- i.e. how to convert lazy json in ByteString to be rendered on page?
-    , ")"
-    ]
 
 generatePage :: ServerLog -> H.Html
 generatePage sl =
@@ -38,3 +27,12 @@ generatePage sl =
       H.script ! A.src "static/js/app.js" $ ""
     H.body $
       H.script $ H.unsafeLazyByteString $ generateElmInitCode sl
+
+
+generateElmInitCode :: ServerLog -> ByteString
+generateElmInitCode sl = BS.concat $ map BS.pack
+    [ "Elm.Main.fullscreen("
+    , show $ encode sl --TODO using show as a hack to escape '"' in the json - how to do it better?
+                       -- i.e. how to convert lazy json in ByteString to be rendered on page?
+    , ")"
+    ]

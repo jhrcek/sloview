@@ -9,6 +9,7 @@ import Snap.Util.FileServe (serveDirectory)
 
 import Handler.Index as Index
 import Handler.Upload as Upload
+import Model.ServerLog as SL
 
 main :: IO ()
 main = simpleHttpServe config site
@@ -21,6 +22,6 @@ config =
 
 site :: Snap ()
 site =
-    ifTop Index.handler
-    <|> route [("/doUpload", Upload.handler)]
+    ifTop (Index.indexHandler SL.initialServerLog)
+    <|> route [("/doUpload", Upload.uploadHandler)]
     <|> dir "static" (serveDirectory "static")

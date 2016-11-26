@@ -11,7 +11,7 @@ type alias ServerLog =
 
 type
     ServerLogMessage
-    --  Date LogLevel Logger Thread Payload Exception
+    --  Date LogLevel Logger Thread Payload Stacktrace
     = M Date LogLevel String String String (Maybe String)
 
 
@@ -21,7 +21,7 @@ type ServerLogMessageField
     | LoggerField
     | ThreadField
     | PayloadField
-    | ExceptionField
+    | StacktraceField
 
 
 type LogLevel

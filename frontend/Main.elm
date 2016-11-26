@@ -6,7 +6,6 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Json.Decode as Json
 import Model.ServerLog exposing (..)
-import Time exposing (Time)
 
 
 main : Program String Model Msg
@@ -122,47 +121,26 @@ notificationsView errMsgs =
 
 
 viewMessage : String -> List ServerLogMessageField -> ServerLogMessage -> Html Msg
-viewMessage dateFormat enabledFields (M date logLevel logger thread payload exception) =
+viewMessage dateFormat enabledFields (M date logLevel logger thread payload stacktrace) =
     let
         includeField field value =
             if List.member field enabledFields then
-                value
+                [ value ]
             else
-                ""
+                []
     in
         div [ logLevelClass logLevel ]
             [ text <|
-                String.join " "
-                    [ includeField DateTimeField (Date.Format.format dateFormat date)
-                    , includeField LogLevelField (toString logLevel)
-                    , includeField LoggerField ("[" ++ logger ++ "]")
-                    , includeField ThreadField ("(" ++ thread ++ ")")
-                    , includeField PayloadField payload
-                    , includeField ExceptionField (Maybe.withDefault "" exception)
-                    ]
+                String.join " " <|
+                    List.concat
+                        [ includeField DateTimeField (Date.Format.format dateFormat date)
+                        , includeField LogLevelField (toString logLevel)
+                        , includeField LoggerField ("[" ++ logger ++ "]")
+                        , includeField ThreadField ("(" ++ thread ++ ")")
+                        , includeField PayloadField payload
+                        , includeField StacktraceField (Maybe.withDefault "" stacktrace)
+                        ]
             , hr [] []
-            ]
-
-
-formatTime : Time -> String
-formatTime totalMillis =
-    let
-        hrs =
-            floor <| Time.inHours totalMillis
-
-        mins =
-            floor << Time.inMinutes <| totalMillis - toFloat hrs * Time.hour
-
-        secs =
-            floor << Time.inSeconds <| totalMillis - toFloat hrs * Time.hour - toFloat mins * Time.minute
-
-        twoDigits =
-            String.padLeft 2 '0' << toString
-    in
-        String.join ":"
-            [ twoDigits hrs
-            , twoDigits mins
-            , twoDigits secs
             ]
 
 
@@ -213,7 +191,7 @@ messageFieldChecboxes enabledMessageFields =
         , messageFieldCheckbox LoggerField
         , messageFieldCheckbox ThreadField
         , messageFieldCheckbox PayloadField
-        , messageFieldCheckbox ExceptionField
+        , messageFieldCheckbox StacktraceField
         ]
 
 

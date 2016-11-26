@@ -1,24 +1,32 @@
-module Handler.Upload (handler) where
+{-# LANGUAGE OverloadedStrings #-}
+module Handler.Upload (uploadHandler) where
 
 import Data.Int (Int64)
-import qualified Data.Text.Lazy as T
+import Data.Text.Lazy (pack)
 import qualified Data.Text.Lazy.IO as TIO
 import Snap.Core (Snap, writeLazyText)
 import Snap.Util.FileUploads (handleFileUploads, defaultUploadPolicy, allowWithMaximumSize, setMaximumFormInputSize, UploadPolicy, setMaximumNumberOfFormInputs, PartInfo, PolicyViolationException)
 
+import Model.ServerLog as SL
+import Handler.Index as Index
 
-handler :: Snap ()
-handler = do
-    [info] <- handleFileUploads "/tmp" serverLogUploadPolicy --policy should guarrantee only 1 file will be uploaded (?)
+uploadHandler :: Snap ()
+uploadHandler = do
+    [exOrText] <- handleFileUploads "/tmp" serverLogUploadPolicy --policy should guarrantee only 1 file will be uploaded (?)
         (const $ allowWithMaximumSize maxUploadFileSize)
-        handleFile
-    writeLazyText info
+        handleUpload
+    either handleException handleParsedServerLog exOrText
 
-handleFile :: PartInfo -> Either PolicyViolationException FilePath -> IO T.Text
-handleFile _pinfo =
-    either
-        (\exception -> return . T.pack $ show exception)
-        (\fpath -> T.take 1000 `fmap` TIO.readFile fpath)
+handleUpload :: PartInfo -> Either PolicyViolationException FilePath -> IO (Either PolicyViolationException ServerLog)
+handleUpload _pinfo = either
+    (return . Left) -- just past the exception out
+    (\f -> Right . SL.parseServerLogText <$> TIO.readFile f)
+
+handleException :: PolicyViolationException -> Snap ()
+handleException = writeLazyText . pack . show
+
+handleParsedServerLog :: ServerLog -> Snap ()
+handleParsedServerLog = Index.indexHandler
 
 serverLogUploadPolicy :: UploadPolicy
 serverLogUploadPolicy =

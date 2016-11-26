@@ -1,25 +1,37 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts #-}
+
 module Model.ServerLog where
 
+import Control.Monad (replicateM)
 import Data.Aeson (ToJSON, toJSON, Value(Array))
+import Data.Char (isDigit)
+import Data.Either (partitionEithers)
 import Data.Time.Calendar (fromGregorian)
-import Data.Time.Clock (UTCTime(UTCTime), secondsToDiffTime)
+import Data.Time.Clock (UTCTime(UTCTime), DiffTime, secondsToDiffTime, picosecondsToDiffTime)
+import Data.Text.Lazy (Text, pack, concat, breakOn, null, lines, uncons, intercalate)
+import Prelude hiding (concat, null, lines, unlines)
 import GHC.Generics
 import GHC.Exts (fromList)
+import Text.Parsec (parse, (<|>))
+import Text.Parsec.Char (string, digit, char, satisfy, noneOf, anyChar, spaces)
+import Text.Parsec.Combinator (choice, many1, between, manyTill, eof)
+import Text.Parsec.Text.Lazy (Parser)
 
 type ServerLog = [ServerLogMessage]
 
 data ServerLogMessage = M
     { date :: UTCTime
     , logLevel :: LogLevel
-    , logger :: String
-    , thread :: String
-    , payload :: String
-    , exception :: Maybe String
+    , logger :: Text
+    , thread :: Text
+    , payload :: Text
+    , stacktrace :: Maybe Text
     } deriving (Show, Generic)
 
 instance ToJSON ServerLogMessage where
-    toJSON M{date=d, logLevel=ll, logger=l, thread=t, payload=p, exception=e} =
+    toJSON M{date=d, logLevel=ll, logger=l, thread=t, payload=p, stacktrace=e} =
         Array $ fromList [toJSON d, toJSON ll, toJSON l, toJSON t, toJSON p, toJSON e]
 
 data LogLevel
@@ -29,17 +41,97 @@ data LogLevel
     | WARN
     | ERROR
     | FATAL
-    deriving (Show, Generic)
+    deriving (Eq, Generic, Show)
 
 instance ToJSON LogLevel where
 
 
-testMessage :: ServerLogMessage
-testMessage = M
-    { date = UTCTime (fromGregorian 2016 11 25) (secondsToDiffTime $ 5 * 3600)
-    , logLevel = ERROR
-    , logger = "org.some.Logger"
-    , thread = "some thread"
-    , payload = "Something happened"
-    , exception = Nothing
+parseServerLogText :: Text -> ServerLog
+parseServerLogText slt = parsedMessages
+  where -- TODO do something with parse errors
+    (_parseErrors, parsedMessages) = partitionEithers . map (parse serverLogMessageP "") $ splitIntoMessages slt
+
+
+splitIntoMessages :: Text -> [Text]
+splitIntoMessages serverLogText =
+  let
+    msgList = map (intercalate "\n") . foldr accumulateMessages [] $ lines serverLogText
+
+    accumulateMessages line acc = case acc of
+        [] -> [[line]]
+        x:xs -> if startsWithDigit line then
+                    [] : (line:x) : xs
+                else
+                    (line:x) : xs
+
+    startsWithDigit = maybe False (isDigit . fst) . uncons
+
+  in case msgList of
+      [] -> []
+      (_throwawayEmpty:nonemptyMsgs) -> nonemptyMsgs --drop first empty msg that's appended there by '[] : (line:x) : xs'^
+
+serverLogMessageP :: Parser ServerLogMessage
+serverLogMessageP = (\d ll l t (p,e) ->  M d ll l t p e)
+    <$> (dateP  <* spaces)
+    <*> (logLevelP <* spaces)
+    <*> (loggerP <* spaces)
+    <*> (threadP <* spaces)
+    <*> payloadP
+
+-- TODO also parse date
+dateP :: Parser UTCTime
+dateP = UTCTime (fromGregorian 2000 1 1 ) <$> timeP
+
+timeP :: Parser DiffTime
+timeP =
+  let picosPerSec = 10^(12::Integer)
+  in
+    (\h m s ms -> picosecondsToDiffTime
+      $ (h * 3600 * picosPerSec)
+      + (m * 60 * picosPerSec)
+      + (s * picosPerSec)
+      + (ms * 10^(9::Integer))
+    ) <$> (digits 2 <* char ':')
+      <*> (digits 2 <* char ':')
+      <*> (digits 2 <* char ',')
+      <*> digits 3
+
+digits :: Int -> Parser Integer
+digits cnt = read <$> replicateM cnt digit
+
+logLevelP :: Parser LogLevel
+logLevelP = choice $ map constParser [TRACE, DEBUG, INFO, WARN, ERROR, FATAL]
+  where
+    constParser c = string (show c) *> pure c
+
+loggerP :: Parser Text
+loggerP = between (char '[') (char ']') (pack <$> many1 (satisfy (']'/=)))
+
+threadP :: Parser Text
+threadP =
+  let
+    strWithouParens =  many1 $ noneOf "()"
+    parens = between (char '(') (char ')')
+  in -- workaround for thread names like "(Thread-5 (HornetQ-client-global-threads-242452152))"
+    parens ((concat . map pack) <$> many1 (strWithouParens <|> parens strWithouParens))
+
+payloadP :: Parser (Text, Maybe Text)
+payloadP = do
+    restOfMessage <- pack <$> manyTill anyChar eof
+    let (payload', st) = breakOn "\tat" restOfMessage
+        stacktrace' = if null st then Nothing else Just st
+    return (payload', stacktrace')
+
+-- TODO get rid of these test data
+initialServerLog :: ServerLog
+initialServerLog = [ initialMessage ]
+
+initialMessage :: ServerLogMessage
+initialMessage = M
+    { date = UTCTime (fromGregorian 2017 1 1) (secondsToDiffTime $ 5 * 3600)
+    , logLevel = WARN
+    , logger = "logger"
+    , thread = "thread"
+    , payload = "Upload server.log file using the controls on the right"
+    , stacktrace = Nothing
     }

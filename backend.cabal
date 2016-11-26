@@ -1,5 +1,5 @@
 Name:                backend
-Version:             0.1
+Version:             0.0.1
 Synopsis:            Project Synopsis Here
 Description:         Project Description Here
 License:             AllRightsReserved
@@ -8,30 +8,41 @@ Maintainer:          honza.hrk@gmail.com
 Stability:           Experimental
 Category:            Web
 Build-type:          Simple
-Cabal-version:       >=1.2
+Cabal-version:       >=1.8
 
 Executable run-sloview
   hs-source-dirs: backend/src
+  ghc-options: -threaded -Wall -fwarn-tabs -funbox-strict-fields -O2
   main-is: Main.hs
-
   other-modules:
     Handler.Index,
     Handler.Upload,
     Model.ServerLog
-
-  Build-depends:
+  build-depends:
     aeson,
     base,
     blaze-html,
     bytestring,
+    parsec,
     snap-core,
     snap-server,
     text,
     time
 
-  ghc-options:
-    -threaded
-    -Wall
-    -fwarn-tabs
-    -funbox-strict-fields
-    -O2
+Test-Suite sloview-test
+  type: exitcode-stdio-1.0
+  main-is: Tests.hs
+  hs-source-dirs:
+    backend/src
+    backend/test
+  build-depends:
+    aeson,
+    base,
+    blaze-html,
+    bytestring,
+    HUnit,
+    parsec,
+    snap-core,
+    snap-server,
+    text,
+    time
