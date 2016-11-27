@@ -10,11 +10,13 @@ import Data.Char (isDigit)
 import Data.Either (partitionEithers)
 import Data.Time.Calendar (fromGregorian)
 import Data.Time.Clock (UTCTime(UTCTime), DiffTime, secondsToDiffTime, picosecondsToDiffTime)
+import Data.Tuple (swap)
 import Data.Text.Lazy (Text, pack, concat, breakOn, null, lines, uncons, intercalate)
+import qualified Data.Text.Lazy.IO as TIO
 import Prelude hiding (concat, null, lines, unlines)
 import GHC.Generics
 import GHC.Exts (fromList)
-import Text.Parsec (parse, (<|>))
+import Text.Parsec (parse, (<|>), ParseError)
 import Text.Parsec.Char (string, digit, char, satisfy, noneOf, anyChar, spaces)
 import Text.Parsec.Combinator (choice, many1, between, manyTill, eof)
 import Text.Parsec.Text.Lazy (Parser)
@@ -46,10 +48,11 @@ data LogLevel
 instance ToJSON LogLevel where
 
 
-parseServerLogText :: Text -> ServerLog
-parseServerLogText slt = parsedMessages
-  where -- TODO do something with parse errors
-    (_parseErrors, parsedMessages) = partitionEithers . map (parse serverLogMessageP "") $ splitIntoMessages slt
+parseServerLog :: FilePath -> IO (ServerLog, [ParseError])
+parseServerLog f = parseServerLogText <$> TIO.readFile f
+  where
+    parseServerLogText :: Text -> (ServerLog, [ParseError])
+    parseServerLogText = swap . partitionEithers . map (parse serverLogMessageP f) . splitIntoMessages
 
 
 splitIntoMessages :: Text -> [Text]

@@ -1,32 +1,46 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Handler.Upload (uploadHandler) where
 
+import Control.Monad (unless)
 import Data.Int (Int64)
-import Data.Text.Lazy (pack)
-import qualified Data.Text.Lazy.IO as TIO
-import Snap.Core (Snap, writeLazyText)
+import Data.Text.Lazy as T (pack)
+import qualified Data.ByteString.Char8 as BS
+import Snap.Core (Snap, writeLazyText, logError)
 import Snap.Util.FileUploads (handleFileUploads, defaultUploadPolicy, allowWithMaximumSize, setMaximumFormInputSize, UploadPolicy, setMaximumNumberOfFormInputs, PartInfo, PolicyViolationException)
+import Text.Parsec (ParseError)
 
 import Model.ServerLog as SL
 import Handler.Index as Index
 
 uploadHandler :: Snap ()
 uploadHandler = do
-    [exOrText] <- handleFileUploads "/tmp" serverLogUploadPolicy --policy should guarrantee only 1 file will be uploaded (?)
+    [exOrParseResult] <- handleFileUploads "/tmp" serverLogUploadPolicy --policy should guarrantee only 1 file will be uploaded (?)
         (const $ allowWithMaximumSize maxUploadFileSize)
         handleUpload
-    either handleException handleParsedServerLog exOrText
+    either handleException handleParsedServerLog exOrParseResult
 
-handleUpload :: PartInfo -> Either PolicyViolationException FilePath -> IO (Either PolicyViolationException ServerLog)
+handleUpload :: PartInfo
+                -> Either PolicyViolationException FilePath
+                -> IO (Either PolicyViolationException (ServerLog, [ParseError]))
 handleUpload _pinfo = either
     (return . Left) -- just past the exception out
-    (\f -> Right . SL.parseServerLogText <$> TIO.readFile f)
+    (fmap Right . SL.parseServerLog)
+
 
 handleException :: PolicyViolationException -> Snap ()
-handleException = writeLazyText . pack . show
+handleException = writeLazyText . T.pack . show
 
-handleParsedServerLog :: ServerLog -> Snap ()
-handleParsedServerLog = Index.indexHandler
+handleParsedServerLog :: (ServerLog, [ParseError]) -> Snap ()
+handleParsedServerLog (slog, errors) = do
+  logErrors errors
+  Index.indexHandler slog
+
+logErrors :: [ParseError] -> Snap ()
+logErrors errs =
+    unless (null errs) $
+        logError . BS.pack . unlines $
+        take 11 ("There were some errors when parsing server.log. Showing (at most) the first 10:" : map show errs)
+
 
 serverLogUploadPolicy :: UploadPolicy
 serverLogUploadPolicy =
