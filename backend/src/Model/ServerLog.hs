@@ -6,6 +6,7 @@ module Model.ServerLog where
 
 import Control.Monad (replicateM)
 import Data.Aeson (ToJSON, toJSON, Value(Array))
+import Data.Bifunctor (first)
 import Data.Char (isDigit)
 import Data.Either (partitionEithers)
 import Data.Time.Calendar (fromGregorian)
@@ -19,6 +20,7 @@ import GHC.Exts (fromList)
 import Text.Parsec (parse, (<|>), ParseError)
 import Text.Parsec.Char (string, digit, char, satisfy, noneOf, anyChar, spaces)
 import Text.Parsec.Combinator (choice, many1, between, manyTill, eof)
+import Text.Parsec.Error (addErrorMessage, Message(Message))
 import Text.Parsec.Text.Lazy (Parser)
 
 type ServerLog = [ServerLogMessage]
@@ -47,13 +49,17 @@ data LogLevel
 
 instance ToJSON LogLevel where
 
-
 parseServerLog :: FilePath -> IO (ServerLog, [ParseError])
-parseServerLog f = parseServerLogText <$> TIO.readFile f
+parseServerLog fpath = parseServerLogText <$> TIO.readFile fpath
   where
     parseServerLogText :: Text -> (ServerLog, [ParseError])
-    parseServerLogText = swap . partitionEithers . map (parse serverLogMessageP f) . splitIntoMessages
+    parseServerLogText = swap . partitionEithers . map parseMessage . splitIntoMessages
 
+    parseMessage :: Text -> Either ParseError ServerLogMessage
+    parseMessage msg = first (includeParserInputInError msg) $ parse serverLogMessageP fpath msg
+
+    includeParserInputInError :: Text -> ParseError -> ParseError
+    includeParserInputInError input = addErrorMessage (Message $ "in message : " ++ show input)
 
 splitIntoMessages :: Text -> [Text]
 splitIntoMessages serverLogText =
