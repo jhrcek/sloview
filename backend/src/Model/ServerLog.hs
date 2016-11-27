@@ -10,7 +10,7 @@ import Data.Bifunctor (first)
 import Data.Char (isDigit)
 import Data.Either (partitionEithers)
 import Data.Time.Calendar (fromGregorian, Day)
-import Data.Time.Clock (UTCTime(UTCTime), DiffTime, secondsToDiffTime, picosecondsToDiffTime)
+import Data.Time.Clock (UTCTime(UTCTime), DiffTime, picosecondsToDiffTime)
 import Data.Tuple (swap)
 import Data.Text.Lazy (Text, pack, concat, breakOn, null, lines, uncons, intercalate)
 import qualified Data.Text.Lazy.IO as TIO
@@ -139,17 +139,3 @@ payloadP = do
     let (payload', st) = breakOn "\tat" restOfMessage
         stacktrace' = if null st then Nothing else Just st
     return (payload', stacktrace')
-
--- TODO get rid of these test data
-initialServerLog :: ServerLog
-initialServerLog = [ initialMessage ]
-
-initialMessage :: ServerLogMessage
-initialMessage = M
-    { date = UTCTime (fromGregorian 2017 1 1) (secondsToDiffTime $ 5 * 3600)
-    , logLevel = WARN
-    , logger = "logger"
-    , thread = "thread"
-    , payload = "Upload server.log file using the controls on the right"
-    , stacktrace = Nothing
-    }

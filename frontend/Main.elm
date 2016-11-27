@@ -90,8 +90,10 @@ view : Model -> Html Msg
 view ({ serverLog, notifications, enabledLogLevels, enabledMessageFields, dateFormat } as model) =
     let
         messagesView =
-            if List.isEmpty enabledMessageFields then
-                div [] []
+            if List.isEmpty serverLog then
+                div [] [ text "No data available. You can upload server.log using controls on the right" ]
+            else if List.isEmpty enabledMessageFields then
+                div [] [ text "Nothing to show - no message fields are enabled. You can enable some using the controls on the right" ]
             else
                 serverLog
                     |> List.filter (\(M _ logLevel _ _ _ _) -> List.member logLevel enabledLogLevels)

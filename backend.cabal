@@ -32,6 +32,8 @@ Executable run-sloview
 Test-Suite sloview-test
   type: exitcode-stdio-1.0
   main-is: Tests.hs
+  other-modules:
+    Model.ServerLog
   hs-source-dirs:
     backend/src
     backend/test
