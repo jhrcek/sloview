@@ -9,7 +9,7 @@ import Data.Aeson (ToJSON, toJSON, Value(Array))
 import Data.Bifunctor (first)
 import Data.Char (isDigit)
 import Data.Either (partitionEithers)
-import Data.Time.Calendar (fromGregorian)
+import Data.Time.Calendar (fromGregorian, Day)
 import Data.Time.Clock (UTCTime(UTCTime), DiffTime, secondsToDiffTime, picosecondsToDiffTime)
 import Data.Tuple (swap)
 import Data.Text.Lazy (Text, pack, concat, breakOn, null, lines, uncons, intercalate)
@@ -17,8 +17,8 @@ import qualified Data.Text.Lazy.IO as TIO
 import Prelude hiding (concat, null, lines, unlines)
 import GHC.Generics
 import GHC.Exts (fromList)
-import Text.Parsec (parse, (<|>), ParseError)
-import Text.Parsec.Char (string, digit, char, satisfy, noneOf, anyChar, spaces)
+import Text.Parsec (parse, try, (<|>), ParseError)
+import Text.Parsec.Char (string, digit, char, satisfy, noneOf, anyChar, spaces, space)
 import Text.Parsec.Combinator (choice, many1, between, manyTill, eof)
 import Text.Parsec.Error (addErrorMessage, Message(Message))
 import Text.Parsec.Text.Lazy (Parser)
@@ -81,15 +81,24 @@ splitIntoMessages serverLogText =
 
 serverLogMessageP :: Parser ServerLogMessage
 serverLogMessageP = (\d ll l t (p,e) ->  M d ll l t p e)
-    <$> (dateP  <* spaces)
+    <$> (dateTimeP  <* space)
     <*> (logLevelP <* spaces)
-    <*> (loggerP <* spaces)
-    <*> (threadP <* spaces)
+    <*> (loggerP <* space)
+    <*> (threadP <* space)
     <*> payloadP
 
--- TODO also parse date
-dateP :: Parser UTCTime
-dateP = UTCTime (fromGregorian 2000 1 1 ) <$> timeP
+dateTimeP :: Parser UTCTime
+dateTimeP = UTCTime <$> tryDate <*> timeP
+  where -- if date not present just return arbitrary fixed date
+    tryDate = try (dateP <* space) <|> return fixedDate
+    fixedDate = fromGregorian 2000 1 1
+
+dateP :: Parser Day
+dateP = fromGregorian -- (Integer -> Int -> Int -> Day)
+    <$> (digits 4 <* char '-')
+    <*> (fromIntegral <$> digits 2 <* char '-')
+    <*> (fromIntegral <$> digits 2)
+
 
 timeP :: Parser DiffTime
 timeP =
