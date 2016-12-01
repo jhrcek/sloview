@@ -48,4 +48,4 @@ serverLogUploadPolicy =
     setMaximumFormInputSize maxUploadFileSize defaultUploadPolicy
 
 maxUploadFileSize :: Int64
-maxUploadFileSize = 2^(20::Int) --1 Mb
+maxUploadFileSize = 2^(27::Int) --128 Mb
