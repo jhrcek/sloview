@@ -1,8 +1,10 @@
-module Model.ServerLog exposing (serverLogDecoder, ServerLog, ServerLogMessage(M), LogLevel(..), ServerLogMessageField(..))
+module Model.ServerLog exposing (serverLogDecoder, ServerLog, ServerLogMessage(M), LogLevel(..), ServerLogMessageField(..), AggregatedMessageByPayload(AMP), aggregateMessagesByPayload)
 
 import Date exposing (Date, fromTime)
 import Json.Decode exposing (..)
+import List.Extra
 import Result
+import Tuple
 
 
 type alias ServerLog =
@@ -13,6 +15,12 @@ type
     ServerLogMessage
     --  Date LogLevel Logger Thread Payload Stacktrace
     = M Date LogLevel String String String (Maybe String)
+
+
+type
+    AggregatedMessageByPayload
+    --   payload, LogLevel, number of times the same message was present in the log
+    = AMP String LogLevel Int
 
 
 type ServerLogMessageField
@@ -87,3 +95,20 @@ readLogLevel s =
 
         _ ->
             UNKNOWN
+
+
+aggregateMessagesByPayload : ServerLog -> List AggregatedMessageByPayload
+aggregateMessagesByPayload sl =
+    List.map (\(M _ logLevel _ _ payload _) -> ( logLevel, payload )) sl
+        |> List.sortBy Tuple.second
+        |> List.Extra.groupWhile (\( _, x ) ( _, y ) -> x == y)
+        |> List.map
+            (\gr ->
+                let
+                    ( ll, pl ) =
+                        Maybe.withDefault ( UNKNOWN, "ERROR" ) <| List.head gr
+                in
+                    AMP pl ll (List.length gr)
+            )
+        |> List.sortBy (\(AMP _ _ count) -> count)
+        |> List.reverse

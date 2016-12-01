@@ -25,6 +25,7 @@ type alias Model =
     , enabledLogLevels : List LogLevel
     , enabledMessageFields : List ServerLogMessageField
     , dateFormat : String
+    , viewMode : ViewMode
     }
 
 
@@ -32,6 +33,12 @@ type Msg
     = LogLevelChange LogLevel Bool
     | MessageFieldChange ServerLogMessageField Bool
     | DateFormatChange String
+    | ModeChange ViewMode
+
+
+type ViewMode
+    = MessagesMode
+    | AggregatedMessagesMode
 
 
 init : String -> ( Model, Cmd Msg )
@@ -46,6 +53,7 @@ init serverLogJson =
           , enabledLogLevels = [ FATAL, ERROR, WARN ]
           , enabledMessageFields = [ DateTimeField, PayloadField ]
           , dateFormat = "%H:%M:%S"
+          , viewMode = MessagesMode
           }
         , Cmd.none
         )
@@ -77,6 +85,9 @@ update msg model =
         DateFormatChange df ->
             ( { model | dateFormat = df }, Cmd.none )
 
+        ModeChange m ->
+            ( { model | viewMode = m }, Cmd.none )
+
 
 updateList : a -> Bool -> List a -> List a
 updateList item addItem list =
@@ -87,39 +98,54 @@ updateList item addItem list =
 
 
 view : Model -> Html Msg
-view ({ serverLog, notifications, enabledLogLevels, enabledMessageFields, dateFormat } as model) =
+view model =
     let
-        messagesView =
-            if List.isEmpty serverLog then
-                div [] [ text "No data available. You can upload server.log using controls on the right" ]
-            else if List.isEmpty enabledMessageFields then
-                div [] [ text "Nothing to show - no message fields are enabled. You can enable some using the controls on the right" ]
-            else
-                serverLog
-                    |> List.filter (\(M _ logLevel _ _ _ _) -> List.member logLevel enabledLogLevels)
-                    |> List.map (viewMessage dateFormat enabledMessageFields)
-                    |> div []
+        viewForMode =
+            case model.viewMode of
+                MessagesMode ->
+                    messagesView model
+
+                AggregatedMessagesMode ->
+                    aggregatedMessagesView model
     in
         div []
             [ controlsPanel model
-            , notificationsView notifications
-            , messagesView
+            , notificationsView model.notifications
+            , viewForMode
             ]
 
 
-uploadForm : Html Msg
-uploadForm =
-    Html.form [ enctype "multipart/form-data", action "doUpload", method "POST" ]
-        [ input [ name "file", type_ "file" ] []
-        , br [] []
-        , input [ type_ "submit", value "Upload server.log" ] []
-        ]
+messagesView : Model -> Html Msg
+messagesView m =
+    let
+        messagesToDisplay =
+            m.serverLog
+                |> List.filter (\(M _ logLevel _ _ _ _) -> List.member logLevel m.enabledLogLevels)
+                |> List.map (viewMessage m.dateFormat m.enabledMessageFields)
+    in
+        if List.isEmpty m.serverLog then
+            div [] [ text noServerLog ]
+        else if List.isEmpty m.enabledMessageFields then
+            div [] [ text noFieldsEnabled ]
+        else if List.isEmpty messagesToDisplay then
+            div [] [ text noMessagesToDisplay ]
+        else
+            div [] messagesToDisplay
 
 
-notificationsView : List String -> Html Msg
-notificationsView errMsgs =
-    div [ style [ ( "color", "red" ) ] ] <|
-        List.map (\m -> div [] [ text m ]) errMsgs
+noFieldsEnabled : String
+noFieldsEnabled =
+    "Nothing to show - no message fields are enabled. You can enable some using the controls on the right"
+
+
+noServerLog : String
+noServerLog =
+    "No data available. You can upload server.log using controls on the right"
+
+
+noMessagesToDisplay : String
+noMessagesToDisplay =
+    "No messages match specified criteria."
 
 
 viewMessage : String -> List ServerLogMessageField -> ServerLogMessage -> Html Msg
@@ -146,13 +172,61 @@ viewMessage dateFormat enabledFields (M date logLevel logger thread payload stac
             ]
 
 
+aggregatedMessagesView : Model -> Html Msg
+aggregatedMessagesView m =
+    let
+        messagesToDisplay =
+            m.serverLog
+                |> aggregateMessagesByPayload
+                |> List.filter (\(AMP _ logLevel _) -> List.member logLevel m.enabledLogLevels)
+                |> List.map viewAggregatedMessage
+    in
+        if List.isEmpty m.serverLog then
+            div [] [ text noServerLog ]
+        else if List.isEmpty messagesToDisplay then
+            div [] [ text noMessagesToDisplay ]
+        else
+            div [] messagesToDisplay
+
+
+viewAggregatedMessage : AggregatedMessageByPayload -> Html Msg
+viewAggregatedMessage (AMP payload logLevel count) =
+    div [ logLevelClass logLevel ]
+        [ text <| (toString count) ++ "x " ++ payload
+        , hr [] []
+        ]
+
+
+uploadForm : Html Msg
+uploadForm =
+    Html.form [ enctype "multipart/form-data", action "doUpload", method "POST" ]
+        [ input [ name "file", type_ "file" ] []
+        , br [] []
+        , input [ type_ "submit", value "Upload server.log" ] []
+        ]
+
+
+notificationsView : List String -> Html Msg
+notificationsView errMsgs =
+    div [ style [ ( "color", "red" ) ] ] <|
+        List.map (\m -> div [] [ text m ]) errMsgs
+
+
 controlsPanel : Model -> Html Msg
-controlsPanel { serverLog, logLevelCounts, enabledLogLevels, enabledMessageFields } =
-    div [ class "controls" ] <|
-        uploadForm
-            :: logLevelCheckboxes enabledLogLevels logLevelCounts
-            ++ messageFieldChecboxes enabledMessageFields
-            ++ [ dateFormatSelect ]
+controlsPanel { serverLog, logLevelCounts, enabledLogLevels, enabledMessageFields, viewMode } =
+    let
+        controlsRelevantForMessageView =
+            if viewMode == MessagesMode then
+                messageFieldChecboxes enabledMessageFields
+                    ++ [ dateFormatSelect ]
+            else
+                []
+    in
+        div [ class "controls" ] <|
+            uploadForm
+                :: viewModeRadios viewMode
+                :: logLevelCheckboxes enabledLogLevels logLevelCounts
+                ++ controlsRelevantForMessageView
 
 
 logLevelCheckboxes : List LogLevel -> ( Int, Int, Int, Int, Int, Int, Int ) -> List (Html Msg)
@@ -211,6 +285,23 @@ dateFormatSelect =
             , select [ on "change" (Json.map DateFormatChange targetValue) ]
                 (List.map formatOption availableOptions)
             ]
+
+
+viewModeRadios : ViewMode -> Html Msg
+viewModeRadios currentMode =
+    div []
+        [ h4 [] [ text "View mode" ]
+        , radio "Messages" (ModeChange MessagesMode) (currentMode == MessagesMode)
+        , radio "Aggregated Messages" (ModeChange AggregatedMessagesMode) (currentMode == AggregatedMessagesMode)
+        ]
+
+
+radio : String -> msg -> Bool -> Html msg
+radio lbl msg isChecked =
+    label []
+        [ input [ type_ "radio", name "viewMode", onClick msg, checked isChecked ] []
+        , text lbl
+        ]
 
 
 countLevels : ServerLog -> ( Int, Int, Int, Int, Int, Int, Int )
