@@ -2,15 +2,18 @@
 module Handler.Upload (uploadHandler) where
 
 import Control.Monad (unless)
+import qualified Data.ByteString.Char8 as BS
 import Data.Int (Int64)
 import Data.Text.Lazy as T (pack)
-import qualified Data.ByteString.Char8 as BS
-import Snap.Core (Snap, writeLazyText, logError)
-import Snap.Util.FileUploads (handleFileUploads, defaultUploadPolicy, allowWithMaximumSize, setMaximumFormInputSize, UploadPolicy, setMaximumNumberOfFormInputs, PartInfo, PolicyViolationException)
+import Snap.Core (Snap, logError, writeLazyText)
+import Snap.Util.FileUploads (PartInfo, PolicyViolationException, UploadPolicy,
+                              allowWithMaximumSize, defaultUploadPolicy,
+                              handleFileUploads, setMaximumFormInputSize,
+                              setMaximumNumberOfFormInputs)
 import Text.Parsec (ParseError)
 
-import Model.ServerLog as SL
 import Handler.Index as Index
+import Model.ServerLog as SL
 
 uploadHandler :: Snap ()
 uploadHandler = do
@@ -22,18 +25,20 @@ uploadHandler = do
 handleUpload :: PartInfo
                 -> Either PolicyViolationException FilePath
                 -> IO (Either PolicyViolationException (ServerLog, [ParseError]))
-handleUpload _pinfo = either
-    (return . Left) -- just past the exception out
-    (fmap Right . SL.parseServerLog)
+handleUpload _pinfo =
+    either
+        (return . Left) -- just past the exception out
+        (fmap Right . SL.parseServerLog)
 
 
 handleException :: PolicyViolationException -> Snap ()
-handleException = writeLazyText . T.pack . show
+handleException =
+    writeLazyText . T.pack . show
 
 handleParsedServerLog :: (ServerLog, [ParseError]) -> Snap ()
 handleParsedServerLog (slog, errors) = do
-  logErrors errors
-  Index.indexHandler slog
+    logErrors errors
+    Index.indexHandler slog
 
 logErrors :: [ParseError] -> Snap ()
 logErrors errs =
@@ -48,4 +53,5 @@ serverLogUploadPolicy =
     setMaximumFormInputSize maxUploadFileSize defaultUploadPolicy
 
 maxUploadFileSize :: Int64
-maxUploadFileSize = 2^(27::Int) --128 Mb
+maxUploadFileSize =
+    2^(27::Int) --128 Mb

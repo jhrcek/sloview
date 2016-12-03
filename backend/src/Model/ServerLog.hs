@@ -1,36 +1,38 @@
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE FlexibleContexts #-}
 
 module Model.ServerLog where
 
 import Control.Monad (replicateM)
-import Data.Aeson (ToJSON, toJSON, Value(Array))
+import Data.Aeson (ToJSON, Value (Array), toJSON)
 import Data.Bifunctor (first)
 import Data.Char (isDigit)
 import Data.Either (partitionEithers)
-import Data.Time.Calendar (fromGregorian, Day)
-import Data.Time.Clock (UTCTime(UTCTime), DiffTime, picosecondsToDiffTime)
-import Data.Tuple (swap)
-import Data.Text.Lazy (Text, pack, concat, breakOn, null, lines, uncons, intercalate)
+import Data.Text.Lazy (Text, breakOn, concat, intercalate, lines, null, pack,
+                       uncons)
 import qualified Data.Text.Lazy.IO as TIO
-import Prelude hiding (concat, null, lines, unlines)
-import GHC.Generics
+import Data.Time.Calendar (Day, fromGregorian)
+import Data.Time.Clock (DiffTime, UTCTime (UTCTime), picosecondsToDiffTime)
+import Data.Tuple (swap)
 import GHC.Exts (fromList)
-import Text.Parsec (parse, try, (<|>), ParseError)
-import Text.Parsec.Char (string, digit, char, satisfy, noneOf, anyChar, spaces, space)
-import Text.Parsec.Combinator (choice, many1, between, manyTill, eof)
-import Text.Parsec.Error (addErrorMessage, Message(Message))
+import GHC.Generics
+import Prelude hiding (concat, lines, null, unlines)
+import Text.Parsec (ParseError, parse, try, (<|>))
+import Text.Parsec.Char (anyChar, char, digit, noneOf, satisfy, space, spaces,
+                         string)
+import Text.Parsec.Combinator (between, choice, eof, many1, manyTill)
+import Text.Parsec.Error (Message (Message), addErrorMessage)
 import Text.Parsec.Text.Lazy (Parser)
 
 type ServerLog = [ServerLogMessage]
 
 data ServerLogMessage = M
-    { date :: UTCTime
-    , logLevel :: LogLevel
-    , logger :: Text
-    , thread :: Text
-    , payload :: Text
+    { date       :: UTCTime
+    , logLevel   :: LogLevel
+    , logger     :: Text
+    , thread     :: Text
+    , payload    :: Text
     , stacktrace :: Maybe Text
     } deriving (Show, Generic)
 
@@ -76,7 +78,7 @@ splitIntoMessages serverLogText =
     startsWithDigit = maybe False (isDigit . fst) . uncons
 
   in case msgList of
-      [] -> []
+      []                             -> []
       (_throwawayEmpty:nonemptyMsgs) -> nonemptyMsgs --drop first empty msg that's appended there by '[] : (line:x) : xs'^
 
 serverLogMessageP :: Parser ServerLogMessage
