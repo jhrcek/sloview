@@ -22,7 +22,8 @@ import Text.Parsec (ParseError, parse, try, (<|>))
 import Text.Parsec.Char (anyChar, char, digit, noneOf, satisfy, space, spaces,
                          string)
 import Text.Parsec.Combinator (between, choice, eof, many1, manyTill)
-import Text.Parsec.Error (Message (Message), addErrorMessage)
+import Text.Parsec.Error (Message (Message), addErrorMessage, newErrorMessage)
+import Text.Parsec.Pos (newPos)
 import Text.Parsec.Text.Lazy (Parser)
 
 type ServerLog = [ServerLogMessage]
@@ -55,7 +56,11 @@ parseServerLog :: FilePath -> IO (ServerLog, [ParseError])
 parseServerLog fpath = parseServerLogText <$> TIO.readFile fpath
   where
     parseServerLogText :: Text -> (ServerLog, [ParseError])
-    parseServerLogText = swap . partitionEithers . map parseMessage . splitIntoMessages
+    parseServerLogText = let procError e = ([], [mkParseError e])
+        in either procError parseMessages . splitIntoMessages
+
+    parseMessages :: [Text] -> (ServerLog, [ParseError])
+    parseMessages = swap . partitionEithers . map parseMessage
 
     parseMessage :: Text -> Either ParseError ServerLogMessage
     parseMessage msg = first (includeParserInputInError msg) $ parse serverLogMessageP fpath msg
@@ -63,7 +68,10 @@ parseServerLog fpath = parseServerLogText <$> TIO.readFile fpath
     includeParserInputInError :: Text -> ParseError -> ParseError
     includeParserInputInError input = addErrorMessage (Message $ "in message : " ++ show input)
 
-splitIntoMessages :: Text -> [Text]
+    mkParseError :: String -> ParseError
+    mkParseError str = newErrorMessage (Message str) (newPos "dummy" 1 1)
+
+splitIntoMessages :: Text -> Either String [Text]
 splitIntoMessages serverLogText =
   let
     msgList = map (intercalate "\n") . foldr accumulateMessages [] $ lines serverLogText
@@ -78,8 +86,11 @@ splitIntoMessages serverLogText =
     startsWithDigit = maybe False (isDigit . fst) . uncons
 
   in case msgList of
-      []                             -> []
-      (_throwawayEmpty:nonemptyMsgs) -> nonemptyMsgs --drop first empty msg that's appended there by '[] : (line:x) : xs'^
+      [] -> Left "There were no data to parse"
+      --drop first empty msg that's appended there by '[] : (line:x) : xs'^
+      (throwawayEmpty:nonemptyMsgs)
+          | null throwawayEmpty -> Right nonemptyMsgs
+          | otherwise -> Left "There was no message starting with digit"
 
 serverLogMessageP :: Parser ServerLogMessage
 serverLogMessageP = (\d ll l t (p,e) ->  M d ll l t p e)
