@@ -1,16 +1,29 @@
-module Main exposing (..)
+module Main exposing (main)
 
-import Date.Format
-import Html exposing (..)
-import Html.Attributes exposing (..)
-import Html.Events exposing (..)
+import Browser
+import DateFormat
+import Html exposing (Attribute, Html, br, div, h4, hr, input, label, option, select, text)
+import Html.Attributes exposing (action, checked, class, enctype, method, name, style, type_, value)
+import Html.Events exposing (on, onCheck, onClick)
 import Json.Decode as Json
-import Model.ServerLog exposing (..)
+import Model.ServerLog
+    exposing
+        ( AggregatedMessageByPayload(..)
+        , LogLevel(..)
+        , ServerLog
+        , ServerLogMessage(..)
+        , ServerLogMessageField(..)
+        , aggregateMessagesByPayload
+        , fieldToString
+        , logLevelToString
+        , serverLogDecoder
+        )
+import Time
 
 
 main : Program String Model Msg
 main =
-    Html.programWithFlags
+    Browser.element
         { init = init
         , update = update
         , subscriptions = \_ -> Sub.none
@@ -20,19 +33,34 @@ main =
 
 type alias Model =
     { serverLog : ServerLog
-    , logLevelCounts : ( Int, Int, Int, Int, Int, Int, Int )
+    , logLevelCounts : LogLevelCounts
     , notifications : List String
     , enabledLogLevels : List LogLevel
     , enabledMessageFields : List ServerLogMessageField
-    , dateFormat : String
+    , dateFormat : DateFormatConfig
     , viewMode : ViewMode
+    }
+
+
+type alias DateFormatConfig =
+    List DateFormat.Token
+
+
+type alias LogLevelCounts =
+    { fatal : Int
+    , error : Int
+    , warn : Int
+    , info : Int
+    , debug : Int
+    , trace : Int
+    , unknown : Int
     }
 
 
 type Msg
     = LogLevelChange LogLevel Bool
     | MessageFieldChange ServerLogMessageField Bool
-    | DateFormatChange String
+    | DateFormatChange DateFormatConfig
     | ModeChange ViewMode
 
 
@@ -47,16 +75,16 @@ init serverLogJson =
         ( sl, errs ) =
             parseServerLogJson serverLogJson
     in
-        ( { serverLog = sl
-          , logLevelCounts = countLevels sl
-          , notifications = errs
-          , enabledLogLevels = [ FATAL, ERROR, WARN ]
-          , enabledMessageFields = [ DateTimeField, PayloadField ]
-          , dateFormat = "%H:%M:%S"
-          , viewMode = MessagesMode
-          }
-        , Cmd.none
-        )
+    ( { serverLog = sl
+      , logLevelCounts = countLevels sl
+      , notifications = errs
+      , enabledLogLevels = [ FATAL, ERROR, WARN ]
+      , enabledMessageFields = [ DateTimeField, PayloadField ]
+      , dateFormat = timeOnlyFormat
+      , viewMode = MessagesMode
+      }
+    , Cmd.none
+    )
 
 
 parseServerLogJson : String -> ( ServerLog, List String )
@@ -66,7 +94,7 @@ parseServerLogJson serverLogJson =
             ( slog, [] )
 
         Err err ->
-            ( [], [ err ] )
+            ( [], [ Json.errorToString err ] )
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -93,6 +121,7 @@ updateList : a -> Bool -> List a -> List a
 updateList item addItem list =
     if addItem then
         item :: list
+
     else
         List.filter ((/=) item) list
 
@@ -108,11 +137,11 @@ view model =
                 AggregatedMessagesMode ->
                     aggregatedMessagesView model
     in
-        div []
-            [ controlsPanel model
-            , notificationsView model.notifications
-            , viewForMode
-            ]
+    div []
+        [ controlsPanel model
+        , notificationsView model.notifications
+        , viewForMode
+        ]
 
 
 messagesView : Model -> Html Msg
@@ -123,14 +152,17 @@ messagesView m =
                 |> List.filter (\(M _ logLevel _ _ _ _) -> List.member logLevel m.enabledLogLevels)
                 |> List.map (viewMessage m.dateFormat m.enabledMessageFields)
     in
-        if List.isEmpty m.serverLog then
-            div [] [ text noServerLog ]
-        else if List.isEmpty m.enabledMessageFields then
-            div [] [ text noFieldsEnabled ]
-        else if List.isEmpty messagesToDisplay then
-            div [] [ text noMessagesToDisplay ]
-        else
-            div [] messagesToDisplay
+    if List.isEmpty m.serverLog then
+        div [] [ text noServerLog ]
+
+    else if List.isEmpty m.enabledMessageFields then
+        div [] [ text noFieldsEnabled ]
+
+    else if List.isEmpty messagesToDisplay then
+        div [] [ text noMessagesToDisplay ]
+
+    else
+        div [] messagesToDisplay
 
 
 noFieldsEnabled : String
@@ -148,28 +180,29 @@ noMessagesToDisplay =
     "No messages match specified criteria."
 
 
-viewMessage : String -> List ServerLogMessageField -> ServerLogMessage -> Html Msg
+viewMessage : DateFormatConfig -> List ServerLogMessageField -> ServerLogMessage -> Html Msg
 viewMessage dateFormat enabledFields (M date logLevel logger thread payload stacktrace) =
     let
         includeField field value =
             if List.member field enabledFields then
                 [ value ]
+
             else
                 []
     in
-        div [ logLevelClass logLevel ]
-            [ text <|
-                String.join " " <|
-                    List.concat
-                        [ includeField DateTimeField (Date.Format.format dateFormat date)
-                        , includeField LogLevelField (toString logLevel)
-                        , includeField LoggerField ("[" ++ logger ++ "]")
-                        , includeField ThreadField ("(" ++ thread ++ ")")
-                        , includeField PayloadField payload
-                        , includeField StacktraceField (Maybe.withDefault "" stacktrace)
-                        ]
-            , hr [] []
-            ]
+    div [ logLevelClass logLevel ]
+        [ text <|
+            String.join " " <|
+                List.concat
+                    [ includeField DateTimeField (DateFormat.format dateFormat Time.utc date)
+                    , includeField LogLevelField (logLevelToString logLevel)
+                    , includeField LoggerField ("[" ++ logger ++ "]")
+                    , includeField ThreadField ("(" ++ thread ++ ")")
+                    , includeField PayloadField payload
+                    , includeField StacktraceField (Maybe.withDefault "" stacktrace)
+                    ]
+        , hr [] []
+        ]
 
 
 aggregatedMessagesView : Model -> Html Msg
@@ -181,18 +214,20 @@ aggregatedMessagesView m =
                 |> List.filter (\(AMP _ logLevel _) -> List.member logLevel m.enabledLogLevels)
                 |> List.map viewAggregatedMessage
     in
-        if List.isEmpty m.serverLog then
-            div [] [ text noServerLog ]
-        else if List.isEmpty messagesToDisplay then
-            div [] [ text noMessagesToDisplay ]
-        else
-            div [] messagesToDisplay
+    if List.isEmpty m.serverLog then
+        div [] [ text noServerLog ]
+
+    else if List.isEmpty messagesToDisplay then
+        div [] [ text noMessagesToDisplay ]
+
+    else
+        div [] messagesToDisplay
 
 
 viewAggregatedMessage : AggregatedMessageByPayload -> Html Msg
 viewAggregatedMessage (AMP payload logLevel count) =
     div [ logLevelClass logLevel ]
-        [ text <| (toString count) ++ "x " ++ payload
+        [ text <| String.fromInt count ++ "x " ++ payload
         , hr [] []
         ]
 
@@ -208,48 +243,46 @@ uploadForm =
 
 notificationsView : List String -> Html Msg
 notificationsView errMsgs =
-    div [ style [ ( "color", "red" ) ] ] <|
+    div [ style "color" "red" ] <|
         List.map (\m -> div [] [ text m ]) errMsgs
 
 
 controlsPanel : Model -> Html Msg
-controlsPanel { serverLog, logLevelCounts, enabledLogLevels, enabledMessageFields, viewMode } =
+controlsPanel { logLevelCounts, enabledLogLevels, enabledMessageFields, viewMode } =
     let
         controlsRelevantForMessageView =
             if viewMode == MessagesMode then
                 messageFieldChecboxes enabledMessageFields
                     ++ [ dateFormatSelect ]
+
             else
                 []
     in
-        div [ class "controls" ] <|
-            uploadForm
-                :: viewModeRadios viewMode
-                :: logLevelCheckboxes enabledLogLevels logLevelCounts
-                ++ controlsRelevantForMessageView
+    div [ class "controls" ] <|
+        uploadForm
+            :: viewModeRadios viewMode
+            :: logLevelCheckboxes enabledLogLevels logLevelCounts
+            ++ controlsRelevantForMessageView
 
 
-logLevelCheckboxes : List LogLevel -> ( Int, Int, Int, Int, Int, Int, Int ) -> List (Html Msg)
-logLevelCheckboxes enabledLogLevels logLevelCounts =
+logLevelCheckboxes : List LogLevel -> LogLevelCounts -> List (Html Msg)
+logLevelCheckboxes enabledLogLevels logCounts =
     let
         logLevelCheckbox levelCount logLevel =
             div [ logLevelClass logLevel ]
                 [ input [ type_ "checkbox", checked (List.member logLevel enabledLogLevels), onCheck (LogLevelChange logLevel) ] []
-                , text <| toString logLevel ++ " (" ++ toString levelCount ++ ")"
+                , text <| logLevelToString logLevel ++ " (" ++ String.fromInt levelCount ++ ")"
                 ]
-
-        ( f, e, w, i, d, t, u ) =
-            logLevelCounts
     in
-        [ h4 [] [ text "Log Level (# of msgs)" ]
-        , logLevelCheckbox f FATAL
-        , logLevelCheckbox e ERROR
-        , logLevelCheckbox w WARN
-        , logLevelCheckbox i INFO
-        , logLevelCheckbox d DEBUG
-        , logLevelCheckbox t TRACE
-        , logLevelCheckbox u UNKNOWN
-        ]
+    [ h4 [] [ text "Log Level (# of msgs)" ]
+    , logLevelCheckbox logCounts.fatal FATAL
+    , logLevelCheckbox logCounts.error ERROR
+    , logLevelCheckbox logCounts.warn WARN
+    , logLevelCheckbox logCounts.info INFO
+    , logLevelCheckbox logCounts.debug DEBUG
+    , logLevelCheckbox logCounts.trace TRACE
+    , logLevelCheckbox logCounts.unknown UNKNOWN
+    ]
 
 
 messageFieldChecboxes : List ServerLogMessageField -> List (Html Msg)
@@ -258,33 +291,72 @@ messageFieldChecboxes enabledMessageFields =
         messageFieldCheckbox field =
             div []
                 [ input [ type_ "checkbox", checked (List.member field enabledMessageFields), onCheck (MessageFieldChange field) ] []
-                , text <| String.dropRight 5 <| toString field
+                , text <| fieldToString field
                 ]
     in
-        [ h4 [] [ text "Message fields" ]
-        , messageFieldCheckbox DateTimeField
-        , messageFieldCheckbox LogLevelField
-        , messageFieldCheckbox LoggerField
-        , messageFieldCheckbox ThreadField
-        , messageFieldCheckbox PayloadField
-        , messageFieldCheckbox StacktraceField
-        ]
+    [ h4 [] [ text "Message fields" ]
+    , messageFieldCheckbox DateTimeField
+    , messageFieldCheckbox LogLevelField
+    , messageFieldCheckbox LoggerField
+    , messageFieldCheckbox ThreadField
+    , messageFieldCheckbox PayloadField
+    , messageFieldCheckbox StacktraceField
+    ]
 
 
 dateFormatSelect : Html Msg
 dateFormatSelect =
     let
         availableOptions =
-            [ ( "%H:%M:%S", "HH:MM:SS" ), ( "%Y-%m-%d %H:%M:%S", "YYYY-mm-dd HH:MM:SS" ) ]
+            [ ( "1", "HH:MM:SS" )
+            , ( "2", "YYYY-mm-dd HH:MM:SS" )
+            ]
+
+        optionDecoder =
+            Json.at [ "target", "value" ] Json.string
+                |> Json.andThen
+                    (\str ->
+                        case str of
+                            "1" ->
+                                Json.succeed timeOnlyFormat
+
+                            "2" ->
+                                Json.succeed dateAndTimeFormat
+
+                            _ ->
+                                Json.fail <| "invalid string" ++ str
+                    )
 
         formatOption ( val, label ) =
             option [ value val ] [ text label ]
     in
-        div []
-            [ h4 [] [ text "Date format" ]
-            , select [ on "change" (Json.map DateFormatChange targetValue) ]
-                (List.map formatOption availableOptions)
-            ]
+    div []
+        [ h4 [] [ text "Date format" ]
+        , select [ on "change" (Json.map DateFormatChange optionDecoder) ]
+            (List.map formatOption availableOptions)
+        ]
+
+
+dateAndTimeFormat : DateFormatConfig
+dateAndTimeFormat =
+    [ DateFormat.yearNumber
+    , DateFormat.text "-"
+    , DateFormat.monthFixed
+    , DateFormat.text "-"
+    , DateFormat.dayOfMonthFixed
+    , DateFormat.text " "
+    ]
+        ++ timeOnlyFormat
+
+
+timeOnlyFormat : DateFormatConfig
+timeOnlyFormat =
+    [ DateFormat.hourMilitaryFixed
+    , DateFormat.text ":"
+    , DateFormat.minuteFixed
+    , DateFormat.text ":"
+    , DateFormat.secondFixed
+    ]
 
 
 viewModeRadios : ViewMode -> Html Msg
@@ -304,35 +376,35 @@ radio lbl msg isChecked =
         ]
 
 
-countLevels : ServerLog -> ( Int, Int, Int, Int, Int, Int, Int )
+countLevels : ServerLog -> LogLevelCounts
 countLevels slog =
     let
-        addLevel lvl ( f, e, w, i, d, t, u ) =
+        addLevel lvl counts =
             case lvl of
                 FATAL ->
-                    ( f + 1, e, w, i, d, t, u )
+                    { counts | fatal = counts.fatal + 1 }
 
                 ERROR ->
-                    ( f, e + 1, w, i, d, t, u )
+                    { counts | error = counts.error + 1 }
 
                 WARN ->
-                    ( f, e, w + 1, i, d, t, u )
+                    { counts | warn = counts.warn + 1 }
 
                 INFO ->
-                    ( f, e, w, i + 1, d, t, u )
+                    { counts | info = counts.info + 1 }
 
                 DEBUG ->
-                    ( f, e, w, i, d + 1, t, u )
+                    { counts | debug = counts.debug + 1 }
 
                 TRACE ->
-                    ( f, e, w, i, d, t + 1, u )
+                    { counts | trace = counts.trace + 1 }
 
                 UNKNOWN ->
-                    ( f, e, w, i, d, t, u + 1 )
+                    { counts | unknown = counts.unknown + 1 }
     in
-        List.foldl (\(M _ lvl _ _ _ _) counts -> addLevel lvl counts) ( 0, 0, 0, 0, 0, 0, 0 ) slog
+    List.foldl (\(M _ lvl _ _ _ _) counts -> addLevel lvl counts) (LogLevelCounts 0 0 0 0 0 0 0) slog
 
 
 logLevelClass : LogLevel -> Attribute Msg
 logLevelClass =
-    class << String.toLower << toString
+    class << String.toLower << logLevelToString

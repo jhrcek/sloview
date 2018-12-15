@@ -5,15 +5,14 @@ import Control.Monad (unless)
 import qualified Data.ByteString.Char8 as BS
 import Data.Int (Int64)
 import Data.Text.Lazy as T (pack)
+import Handler.Index as Index
+import Model.ServerLog as SL
 import Snap.Core (Snap, logError, writeLazyText)
 import Snap.Util.FileUploads (PartInfo, PolicyViolationException, UploadPolicy,
                               allowWithMaximumSize, defaultUploadPolicy,
                               handleFileUploads, setMaximumFormInputSize,
                               setMaximumNumberOfFormInputs)
 import Text.Parsec (ParseError)
-
-import Handler.Index as Index
-import Model.ServerLog as SL
 
 uploadHandler :: Snap ()
 uploadHandler = do

@@ -9,6 +9,7 @@ import Data.Aeson (ToJSON, Value (Array), toJSON)
 import Data.Bifunctor (first)
 import Data.Char (isDigit)
 import Data.Either (partitionEithers)
+import Data.Functor (($>))
 import Data.Text.Lazy (Text, breakOn, concat, intercalate, lines, null, pack,
                        uncons)
 import qualified Data.Text.Lazy.IO as TIO
@@ -133,7 +134,7 @@ digits cnt = read <$> replicateM cnt digit
 logLevelP :: Parser LogLevel
 logLevelP = choice $ map constParser [TRACE, DEBUG, INFO, WARN, ERROR, FATAL]
   where
-    constParser c = string (show c) *> pure c
+    constParser c = string (show c) $> c
 
 loggerP :: Parser Text
 loggerP = between (char '[') (char ']') (pack <$> many1 (satisfy (']'/=)))
@@ -144,7 +145,7 @@ threadP =
     strWithouParens =  many1 $ noneOf "()"
     parens = between (char '(') (char ')')
   in -- workaround for thread names like "(Thread-5 (HornetQ-client-global-threads-242452152))"
-    parens ((concat . map pack) <$> many1 (strWithouParens <|> parens strWithouParens))
+    parens $ concat . map pack <$> many1 (strWithouParens <|> parens strWithouParens)
 
 payloadP :: Parser (Text, Maybe Text)
 payloadP = do

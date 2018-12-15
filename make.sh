@@ -1,3 +1,3 @@
 #!/bin/bash
-elm make --warn --yes frontend/Main.elm --output=static/js/app.js
-stack install --test --local-bin-path .
+elm make frontend/Main.elm --optimize --output=static/js/app.js && \
+stack install --pedantic --test --local-bin-path .

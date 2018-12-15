@@ -21,9 +21,9 @@ main = do
 allTests :: Test
 allTests = TestList
     [ parseTest dateP "2016-01-02" (fromGregorian 2016 1 2)
-    , parseTest timeP "01:02:03,004" (testTime)
-    , parseTest dateTimeP "01:02:03,004" (UTCTime (fromGregorian 2000 1 1) $ testTime)
-    , parseTest dateTimeP "2020-10-11 01:02:03,004" (UTCTime (fromGregorian 2020 10 11) $ testTime)
+    , parseTest timeP "01:02:03,004" testTime
+    , parseTest dateTimeP "01:02:03,004" (UTCTime (fromGregorian 2000 1 1) testTime)
+    , parseTest dateTimeP "2020-10-11 01:02:03,004" (UTCTime (fromGregorian 2020 10 11) testTime)
     , parseTest logLevelP "WARN" WARN
     , parseTest loggerP "[my.logger]" "my.logger"
     , parseTest threadP "(simpleThreadName)" "simpleThreadName"
